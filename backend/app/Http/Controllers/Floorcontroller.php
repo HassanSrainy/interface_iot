@@ -109,4 +109,14 @@ class FloorController extends Controller
 
         return response()->json(['message' => 'Étage supprimé avec succès'], 200);
     }
+
+    public function byClinique($cliniqueId)
+{
+    $floors = \App\Models\Floor::where('clinique_id', $cliniqueId)
+        ->with('services') // optionnel si tu veux renvoyer aussi les services
+        ->get();
+
+    return response()->json($floors);
+}
+
 }

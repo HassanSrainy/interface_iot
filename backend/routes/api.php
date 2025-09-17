@@ -9,6 +9,7 @@ use App\Http\Controllers\MesureController;
 use App\Http\Controllers\AlerteController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\FamilleController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -25,6 +26,11 @@ Route::apiResource('capteurs', CapteurController::class);
 Route::apiResource('mesures', MesureController::class);
 Route::apiResource('alertes', AlerteController::class);
 Route::apiResource('users', UserController::class);
+Route::apiResource('familles', FamilleController::class);
+// Nested routes pour relations
+Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController::class, 'byClinique']);
+Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);
+
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');

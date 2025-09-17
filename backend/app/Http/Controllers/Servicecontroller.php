@@ -104,4 +104,14 @@ class ServiceController extends Controller
 
         return response()->json(['message' => 'Service supprimé avec succès'], 200);
     }
+
+    public function byFloor($floorId)
+{
+    $services = \App\Models\Service::where('floor_id', $floorId)
+        ->with('capteurs') // optionnel si tu veux les capteurs en même temps
+        ->get();
+
+    return response()->json($services);
+}
+
 }
