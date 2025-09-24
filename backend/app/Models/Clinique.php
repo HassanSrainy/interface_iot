@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Clinique extends Model
 {
-    protected $fillable = ['nom', 'adresse'];
+    protected $fillable = ['nom', 'adresse', 'ville'];
 
     public function users()
     {

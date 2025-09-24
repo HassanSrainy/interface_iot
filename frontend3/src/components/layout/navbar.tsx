@@ -35,9 +35,10 @@ export function Navbar({ user, onLogout, sensorsOnline, totalSensors }: NavbarPr
             </div>
             
             <Button variant="outline" size="sm" onClick={onLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Déconnexion
-            </Button>
+  <LogOut className="h-4 w-4 mr-2" />
+  Déconnexion
+</Button>
+
           </div>
         </div>
       </div>

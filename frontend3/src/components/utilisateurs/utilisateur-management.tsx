@@ -1,572 +1,342 @@
-import { useState } from 'react'
-import { Button } from '../ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
-import { Input } from '../ui/input'
-import { Label } from '../ui/label'
-import { Textarea } from '../ui/textarea'
-import { Badge } from '../ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Checkbox } from '../ui/checkbox'
-import { Plus, Edit, Trash2, Users, UserCheck, UserX, Shield } from 'lucide-react'
-import { Utilisateur, Clinique } from '../../types/domain'
+// frontend3/src/components/users/UserManagement.tsx
+import { useEffect, useState } from "react";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../ui/alert-dialog";
+import { Plus, Edit, Trash2 } from "lucide-react";
+import type { AxiosError } from "axios";
 
-interface UtilisateurManagementProps {
-  utilisateurs: Utilisateur[]
-  cliniques: Clinique[]
-  onAddUtilisateur: (utilisateur: Omit<Utilisateur, 'id' | 'created_at' | 'updated_at' | 'date_creation'>) => void
-  onUpdateUtilisateur: (id: string, utilisateur: Partial<Utilisateur>) => void
-  onDeleteUtilisateur: (id: string) => void
+import {
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  User as ApiUser,
+} from "./utilisateurs-api";
+
+import { getCliniques, Clinique } from "../cliniques/cliniques-api";
+
+/* ---------- Local types ---------- */
+type ValidationErrors = Record<string, string[]>;
+
+interface UserFormData {
+  name: string;
+  email: string;
+  password: string; // optional on update
+  role: "admin" | "user";
+  clinique_ids: number[]; // sélection multiple
 }
 
-const ROLES = [
-  { value: 'admin', label: 'Administrateur' },
-  { value: 'gestionnaire', label: 'Gestionnaire' },
-  { value: 'technicien', label: 'Technicien' },
-  { value: 'operateur', label: 'Opérateur' }
-]
+/* ---------- Component ---------- */
+export function UserManagement() {
+  const [users, setUsers] = useState<ApiUser[]>([]);
+  const [cliniques, setCliniques] = useState<Clinique[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<ApiUser | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
-const STATUTS = [
-  { value: 'actif', label: 'Actif' },
-  { value: 'inactif', label: 'Inactif' },
-  { value: 'suspendu', label: 'Suspendu' }
-]
+  const [formData, setFormData] = useState<UserFormData>({
+    name: "",
+    email: "",
+    password: "",
+    role: "user",
+    clinique_ids: [],
+  });
 
-const PERMISSIONS = [
-  'gestion_capteurs',
-  'gestion_alertes', 
-  'gestion_utilisateurs',
-  'gestion_cliniques',
-  'maintenance_capteurs',
-  'resolution_alertes',
-  'lecture_capteurs',
-  'lecture_alertes'
-]
-
-export function UtilisateurManagement({ 
-  utilisateurs, 
-  cliniques,
-  onAddUtilisateur, 
-  onUpdateUtilisateur, 
-  onDeleteUtilisateur 
-}: UtilisateurManagementProps) {
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [editingUtilisateur, setEditingUtilisateur] = useState<Utilisateur | null>(null)
-  const [formData, setFormData] = useState({
-    nom: '',
-    prenom: '',
-    email: '',
-    telephone: '',
-    role: 'operateur' as Utilisateur['role'],
-    clinique_id: '',
-    statut: 'actif' as Utilisateur['statut'],
-    permissions: [] as string[],
-    adresse: ''
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (editingUtilisateur) {
-      onUpdateUtilisateur(editingUtilisateur.id, formData)
-      setEditingUtilisateur(null)
-    } else {
-      onAddUtilisateur({
-        ...formData,
-        derniere_connexion: undefined
-      })
-      setIsAddDialogOpen(false)
+  /* ---------- Load users + cliniques ---------- */
+  const loadUsers = async () => {
+    setIsLoading(true);
+    try {
+      const data = await getUsers();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("loadUsers error", err);
+      setUsers([]);
+    } finally {
+      setIsLoading(false);
     }
-    resetForm()
-  }
+  };
 
-  const resetForm = () => {
+  const loadCliniques = async () => {
+    try {
+      const data = await getCliniques();
+      setCliniques(data);
+    } catch (err) {
+      console.error("loadCliniques error", err);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+    loadCliniques();
+  }, []);
+
+  /* ---------- Validation ---------- */
+  const validate = (): boolean => {
+    const v: ValidationErrors = {};
+    if (!formData.name.trim()) v.name = ["Le nom est requis."];
+    if (!formData.email || !/^\S+@\S+\.\S+$/.test(formData.email)) v.email = ["Email invalide."];
+    if (!selectedUser && formData.password.length < 6)
+      v.password = ["Le mot de passe est requis (min 6)."];
+    if (!["admin", "user"].includes(formData.role)) v.role = ["Rôle invalide."];
+    setErrors(v);
+    return Object.keys(v).length === 0;
+  };
+
+  /* ---------- Open / Close dialog helpers ---------- */
+  const openCreateDialog = () => {
+    setSelectedUser(null);
+    setFormData({ name: "", email: "", password: "", role: "user", clinique_ids: [] });
+    setErrors({});
+    setFormError(null);
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (user: ApiUser) => {
+    setSelectedUser(user);
     setFormData({
-      nom: '',
-      prenom: '',
-      email: '',
-      telephone: '',
-      role: 'operateur',
-      clinique_id: '',
-      statut: 'actif',
-      permissions: [],
-      adresse: ''
-    })
-  }
+      name: user.name ?? "",
+      email: user.email ?? "",
+      password: "",
+      role: (user.role as "admin" | "user") ?? "user",
+      clinique_ids: user.cliniques?.map(c => c.id) ?? [],
+    });
+    setErrors({});
+    setFormError(null);
+    setIsDialogOpen(true);
+  };
 
-  const handleEdit = (utilisateur: Utilisateur) => {
-    setEditingUtilisateur(utilisateur)
-    setFormData({
-      nom: utilisateur.nom,
-      prenom: utilisateur.prenom,
-      email: utilisateur.email,
-      telephone: utilisateur.telephone || '',
-      role: utilisateur.role,
-      clinique_id: utilisateur.clinique_id || '',
-      statut: utilisateur.statut,
-      permissions: [...utilisateur.permissions],
-      adresse: utilisateur.adresse || ''
-    })
-  }
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    setSelectedUser(null);
+    setFormData({ name: "", email: "", password: "", role: "user", clinique_ids: [] });
+    setErrors({});
+    setFormError(null);
+  };
 
-  const handleCancelEdit = () => {
-    setEditingUtilisateur(null)
-    resetForm()
-  }
+  /* ---------- Submit (create / update) ---------- */
+  const handleSubmit = async () => {
+    if (!validate() || isSaving) return;
 
-  const togglePermission = (permission: string) => {
-    const newPermissions = formData.permissions.includes(permission)
-      ? formData.permissions.filter(p => p !== permission)
-      : [...formData.permissions, permission]
-    setFormData({ ...formData, permissions: newPermissions })
-  }
+    const payload = {
+      name: formData.name,
+      email: formData.email,
+      role: formData.role,
+      clinique_ids: formData.clinique_ids,
+      ...(formData.password ? { password: formData.password } : {}),
+    };
 
-  const getRoleBadgeVariant = (role: string) => {
-    switch (role) {
-      case 'admin': return 'destructive'
-      case 'gestionnaire': return 'default'
-      case 'technicien': return 'secondary'
-      default: return 'outline'
+    setIsSaving(true);
+    try {
+      if (selectedUser) {
+        await updateUser(selectedUser.id, payload);
+      } else {
+        await createUser(payload as any);
+      }
+      await loadUsers();
+      closeDialog();
+    } catch (err: any) {
+      console.error("save error", err);
+      const aErr = err as AxiosError & any;
+      if (aErr?.response?.data?.errors) setErrors(aErr.response.data.errors);
+      else setFormError("Erreur lors de la sauvegarde.");
+    } finally {
+      setIsSaving(false);
     }
-  }
+  };
 
-  const getStatutBadgeVariant = (statut: string) => {
-    switch (statut) {
-      case 'actif': return 'default'
-      case 'inactif': return 'secondary'
-      case 'suspendu': return 'destructive'
-      default: return 'outline'
+  /* ---------- Delete ---------- */
+  const handleDelete = async (id: number) => {
+    const old = users;
+    setUsers(prev => prev.filter(u => u.id !== id));
+    try {
+      await deleteUser(id);
+    } catch (err) {
+      console.error("delete error", err);
+      setUsers(old); // rollback
     }
-  }
-
-  const utilisateursActifs = utilisateurs.filter(u => u.statut === 'actif').length
-  const utilisateursInactifs = utilisateurs.filter(u => u.statut !== 'actif').length
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h2>Gestion des Utilisateurs</h2>
-          <p className="text-muted-foreground">
-            Gérez les utilisateurs et leurs permissions
-          </p>
-        </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <h1 className="text-2xl font-semibold">Gestion des Utilisateurs</h1>
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Ajouter un utilisateur
+            <Button onClick={openCreateDialog}>
+              <Plus className="w-4 h-4 mr-2" /> Nouvel utilisateur
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <form onSubmit={handleSubmit}>
-              <DialogHeader>
-                <DialogTitle>Nouvel Utilisateur</DialogTitle>
-                <DialogDescription>
-                  Ajoutez un nouvel utilisateur au système
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="prenom">Prénom</Label>
-                    <Input
-                      id="prenom"
-                      value={formData.prenom}
-                      onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                      placeholder="Jean"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nom">Nom</Label>
-                    <Input
-                      id="nom"
-                      value={formData.nom}
-                      onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                      placeholder="Martin"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="jean.martin@clinique.fr"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="telephone">Téléphone</Label>
-                  <Input
-                    id="telephone"
-                    value={formData.telephone}
-                    onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
-                    placeholder="+33 1 42 34 56 78"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Rôle</Label>
-                    <Select 
-                      value={formData.role} 
-                      onValueChange={(value: Utilisateur['role']) => setFormData({ ...formData, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map(role => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="statut">Statut</Label>
-                    <Select 
-                      value={formData.statut} 
-                      onValueChange={(value: Utilisateur['statut']) => setFormData({ ...formData, statut: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUTS.map(statut => (
-                          <SelectItem key={statut.value} value={statut.value}>
-                            {statut.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="clinique">Clinique</Label>
-                  <Select 
-                    value={formData.clinique_id} 
-                    onValueChange={(value) => setFormData({ ...formData, clinique_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une clinique" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cliniques.map(clinique => (
-                        <SelectItem key={clinique.id} value={clinique.id}>
-                          {clinique.nom}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="adresse">Adresse</Label>
-                  <Textarea
-                    id="adresse"
-                    value={formData.adresse}
-                    onChange={(e) => setFormData({ ...formData, adresse: e.target.value })}
-                    placeholder="123 Rue de l'utilisateur, Ville 12345"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Permissions</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {PERMISSIONS.map(permission => (
-                      <div key={permission} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={permission}
-                          checked={formData.permissions.includes(permission)}
-                          onCheckedChange={() => togglePermission(permission)}
-                        />
-                        <Label htmlFor={permission} className="text-sm">
-                          {permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{selectedUser ? "Modifier Utilisateur" : "Ajouter Utilisateur"}</DialogTitle>
+              <DialogDescription>
+                {selectedUser ? "Modifiez les infos et les cliniques assignées." : "Créez un utilisateur et assignez ses cliniques."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 gap-4 mt-4">
+              {/* Nom */}
+              <div>
+                <Label>Nom</Label>
+                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                {errors.name && <p className="text-xs text-red-600">{errors.name[0]}</p>}
               </div>
-              <DialogFooter>
-                <Button type="submit">Ajouter</Button>
-              </DialogFooter>
-            </form>
+
+              {/* Email */}
+              <div>
+                <Label>Email</Label>
+                <Input value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                {errors.email && <p className="text-xs text-red-600">{errors.email[0]}</p>}
+              </div>
+
+              {/* Mot de passe */}
+              <div>
+                <Label>Mot de passe {selectedUser ? "(laisser vide)" : ""}</Label>
+                <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
+                {errors.password && <p className="text-xs text-red-600">{errors.password[0]}</p>}
+              </div>
+
+              {/* Rôle */}
+              <div>
+                <Label>Rôle</Label>
+                <select
+                  className="input w-full border rounded p-2"
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as "admin" | "user" })}
+                >
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+                {errors.role && <p className="text-xs text-red-600">{errors.role[0]}</p>}
+              </div>
+
+              {/* Cliniques */}
+             {/* Cliniques */}
+<div>
+  <Label>Cliniques</Label>
+  <div className="space-y-2 mt-2">
+    {cliniques.map(c => {
+      const checked = formData.clinique_ids.includes(c.id);
+      return (
+        <label key={c.id} className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => {
+              setFormData(prev => {
+                const ids = checked
+                  ? prev.clinique_ids.filter(id => id !== c.id) // remove
+                  : [...prev.clinique_ids, c.id];              // add
+                return { ...prev, clinique_ids: ids };
+              });
+            }}
+          />
+          <span>{c.nom}</span>
+        </label>
+      );
+    })}
+  </div>
+</div>
+
+
+              {formError && <div className="text-sm text-red-600">{formError}</div>}
+
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={closeDialog}>Annuler</Button>
+                <Button onClick={handleSubmit} disabled={isSaving}>
+                  {isSaving ? "Enregistrement..." : (selectedUser ? "Modifier" : "Créer")}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="grid gap-6">
-        {/* Statistiques */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Utilisateurs</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{utilisateurs.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Utilisateurs Actifs</CardTitle>
-              <UserCheck className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{utilisateursActifs}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Utilisateurs Inactifs</CardTitle>
-              <UserX className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{utilisateursInactifs}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Administrateurs</CardTitle>
-              <Shield className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {utilisateurs.filter(u => u.role === 'admin').length}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Liste des utilisateurs */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Utilisateurs enregistrés</CardTitle>
-            <CardDescription>
-              Liste de tous les utilisateurs dans le système
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Utilisateur</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  <TableHead>Clinique</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Dernière connexion</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {utilisateurs.map((utilisateur) => (
-                  <TableRow key={utilisateur.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">
-                          {utilisateur.prenom} {utilisateur.nom}
-                        </div>
-                        {utilisateur.telephone && (
-                          <div className="text-sm text-muted-foreground">
-                            {utilisateur.telephone}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{utilisateur.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={getRoleBadgeVariant(utilisateur.role)}>
-                        {ROLES.find(r => r.value === utilisateur.role)?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {utilisateur.clinique?.nom || 'Non assigné'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getStatutBadgeVariant(utilisateur.statut)}>
-                        {STATUTS.find(s => s.value === utilisateur.statut)?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {utilisateur.derniere_connexion 
-                        ? new Date(utilisateur.derniere_connexion).toLocaleDateString('fr-FR')
-                        : 'Jamais'
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => handleEdit(utilisateur)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive" 
-                          onClick={() => onDeleteUtilisateur(utilisateur.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+      {/* Table */}
+      <Card>
+        <CardHeader><CardTitle>Liste des utilisateurs</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nom</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Rôle</TableHead>
+                <TableHead>Cliniques</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={5}>Chargement...</TableCell></TableRow>
+              ) : users.length === 0 ? (
+                <TableRow><TableCell colSpan={5}>Aucun utilisateur.</TableCell></TableRow>
+              ) : (
+                users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell>{u.name}</TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell>{u.role}</TableCell>
+                    <TableCell>{u.cliniques?.map(c => c.nom).join(", ") || "—"}</TableCell>
+                    <TableCell className="flex space-x-2">
+                      <Button size="sm" variant="outline" onClick={() => openEditDialog(u)}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline"><Trash2 className="w-4 h-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Supprimer l'utilisateur ?</AlertDialogTitle>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annuler</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(u.id)}>Supprimer</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Dialog pour l'édition */}
-      {editingUtilisateur && (
-        <Dialog open={true} onOpenChange={handleCancelEdit}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <form onSubmit={handleSubmit}>
-              <DialogHeader>
-                <DialogTitle>Modifier l'utilisateur</DialogTitle>
-                <DialogDescription>
-                  Modifiez les informations de {editingUtilisateur.prenom} {editingUtilisateur.nom}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-prenom">Prénom</Label>
-                    <Input
-                      id="edit-prenom"
-                      value={formData.prenom}
-                      onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-nom">Nom</Label>
-                    <Input
-                      id="edit-nom"
-                      value={formData.nom}
-                      onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-email">Email</Label>
-                  <Input
-                    id="edit-email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-telephone">Téléphone</Label>
-                  <Input
-                    id="edit-telephone"
-                    value={formData.telephone}
-                    onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-role">Rôle</Label>
-                    <Select 
-                      value={formData.role} 
-                      onValueChange={(value: Utilisateur['role']) => setFormData({ ...formData, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map(role => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-statut">Statut</Label>
-                    <Select 
-                      value={formData.statut} 
-                      onValueChange={(value: Utilisateur['statut']) => setFormData({ ...formData, statut: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUTS.map(statut => (
-                          <SelectItem key={statut.value} value={statut.value}>
-                            {statut.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-clinique">Clinique</Label>
-                  <Select 
-                    value={formData.clinique_id} 
-                    onValueChange={(value) => setFormData({ ...formData, clinique_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une clinique" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cliniques.map(clinique => (
-                        <SelectItem key={clinique.id} value={clinique.id}>
-                          {clinique.nom}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-adresse">Adresse</Label>
-                  <Textarea
-                    id="edit-adresse"
-                    value={formData.adresse}
-                    onChange={(e) => setFormData({ ...formData, adresse: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Permissions</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {PERMISSIONS.map(permission => (
-                      <div key={permission} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`edit-${permission}`}
-                          checked={formData.permissions.includes(permission)}
-                          onCheckedChange={() => togglePermission(permission)}
-                        />
-                        <Label htmlFor={`edit-${permission}`} className="text-sm">
-                          {permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={handleCancelEdit}>
-                  Annuler
-                </Button>
-                <Button type="submit">Sauvegarder</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }

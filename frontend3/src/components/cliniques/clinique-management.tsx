@@ -16,6 +16,7 @@ interface Clinique {
   id: number;
   nom: string;
   adresse: string;
+  ville: string;
 }
 
 export function CliniqueManagement() {
@@ -152,7 +153,7 @@ export function CliniqueManagement() {
                 <TableRow key={clinique.id}>
                   <TableCell>{clinique.nom}</TableCell>
                   <TableCell>{clinique.adresse}</TableCell>
-                  <TableCell>{clinique.adresse.split(',').pop()?.trim()}</TableCell>
+                  <TableCell>{clinique.ville}</TableCell>
                   <TableCell className="flex space-x-2">
                     <Button variant="outline" size="sm" onClick={() => handleEdit(clinique)}><Edit className="w-4 h-4" /></Button>
                     <AlertDialog>

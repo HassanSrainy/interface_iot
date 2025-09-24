@@ -44,4 +44,8 @@ class Capteur extends Model
     public function alertes() {
         return $this->hasMany(Alerte::class);
     }
+    public function derniereMesure() {
+    return $this->hasOne(Mesure::class)->latestOfMany('date_mesure');
+}
+
 }

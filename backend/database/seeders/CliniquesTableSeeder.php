@@ -16,6 +16,7 @@ class CliniquesTableSeeder extends Seeder
             Clinique::create([
                 'nom' => 'Clinique ' . $faker->company,
                 'adresse' => $faker->address,
+                'ville' =>$faker->city,
             ]);
         }
     }

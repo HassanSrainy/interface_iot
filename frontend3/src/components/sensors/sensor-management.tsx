@@ -47,6 +47,12 @@ export interface Sensor {
   service?: Service | null;
   mesures?: Mesure[];
   alertes?: Alerte[];
+  // dernière mesure fournie par l'API (basée sur date_mesure)
+  derniere_mesure?: {
+    id?: number;
+    valeur: number;
+    date_mesure: string;
+  } | null;
 }
 
 type ValidationErrors = Record<string, string[]>;
@@ -75,7 +81,7 @@ const normalizeAxiosData = (data: any): any[] => {
   if (!data) return [];
   if (Array.isArray(data)) return data;
   if (Array.isArray(data.data)) return data.data;
-  const keys = ['items', 'results', 'familles', 'floors', 'services', 'rows'];
+  const keys = ['items', 'results', 'familles', 'floors', 'services', 'rows', 'sensors'];
   for (const k of keys) if (Array.isArray(data[k])) return data[k];
   const vals = Object.values(data).filter(v => Array.isArray(v));
   if (vals.length > 0) return vals[0];
@@ -367,6 +373,27 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
   /* ---------- UI ---------- */
   // Force use of cliniques loaded from API to avoid stale prop
   const clinicsToRender = localCliniques;
+  
+  function timeAgo(dateString: string) {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString.replace(' ', 'T')); // transforme "YYYY-MM-DD HH:MM:SS" en ISO
+  const now = new Date();
+  const diff = now.getTime() - date.getTime(); // différence en ms
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `il y a ${seconds} seconde${seconds > 1 ? 's' : ''}`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `il y a ${minutes} minute${minutes > 1 ? 's' : ''}`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours} heure${hours > 1 ? 's' : ''}`;
+
+  const days = Math.floor(hours / 24);
+  return `il y a ${days} jour${days > 1 ? 's' : ''}`;
+}
+
 
   return (
     <div className="space-y-6">
@@ -504,6 +531,7 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
                 <TableHead className="font-medium">Réseau (IP / MAC)</TableHead>
                 <TableHead className="font-medium">Seuils</TableHead>
                 <TableHead className="font-medium">Status</TableHead>
+                <TableHead className="font-medium">Dernière Mesure</TableHead>
                 <TableHead className="font-medium w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -540,6 +568,20 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
 
                   <TableCell className="text-xs">
                     <div className="flex items-center space-x-2">{getStatusIcon(sensor)}</div>
+                  </TableCell>
+
+                  {/* Nouvelle colonne : Dernière Mesure */}
+                  <TableCell className="text-xs">
+                    {sensor.derniere_mesure ? (
+                      <div className="flex flex-col">
+                        <span className="font-medium">{sensor.derniere_mesure.valeur}</span>
+                        <span className="text-muted-foreground text-xs">
+        {timeAgo(sensor.derniere_mesure.date_mesure)}
+      </span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </TableCell>
 
                   <TableCell className="flex space-x-2">

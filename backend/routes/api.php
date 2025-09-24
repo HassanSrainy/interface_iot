@@ -10,6 +10,7 @@ use App\Http\Controllers\AlerteController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FamilleController;
+use Illuminate\Http\Request;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -31,6 +32,7 @@ Route::apiResource('familles', FamilleController::class);
 Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController::class, 'byClinique']);
 Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);
 
-Route::get('/user', function (Request $request) {
+Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {
     return $request->user();
-})->middleware('auth:sanctum');
+});
+Route::post('/logout-all', [AuthController::class, 'logoutAll']);

@@ -23,20 +23,27 @@ class UserController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6',
-            'role' => 'required|in:admin,user',
+            'name'         => 'required|string|max:255',
+            'email'        => 'required|email|unique:users,email',
+            'password'     => 'required|string|min:6',
+            'role'         => 'required|in:admin,user',
+            'clinique_ids'   => 'array',                // ✅ attendu du frontend
+            'clinique_ids.*' => 'exists:cliniques,id',  // ✅ validation des IDs
         ]);
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
+            'name'     => $request->name,
+            'email'    => $request->email,
             'password' => Hash::make($request->password),
-            'role' => $request->role,
+            'role'     => $request->role,
         ]);
 
-        return response()->json($user, 201);
+        // Associer les cliniques (si envoyées)
+        if ($request->has('clinique_ids')) {
+            $user->cliniques()->sync($request->clinique_ids);
+        }
+
+        return response()->json($user->load('cliniques'), 201);
     }
 
     /**
@@ -65,20 +72,27 @@ class UserController extends Controller
         }
 
         $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'password' => 'sometimes|string|min:6',
-            'role' => 'sometimes|in:admin,user',
+            'name'         => 'sometimes|string|max:255',
+            'email'        => 'sometimes|email|unique:users,email,' . $user->id,
+            'password'     => 'sometimes|string|min:6',
+            'role'         => 'sometimes|in:admin,user',
+            'clinique_ids'   => 'array',                // ✅
+            'clinique_ids.*' => 'exists:cliniques,id',  // ✅
         ]);
 
-        if ($request->has('name')) $user->name = $request->name;
-        if ($request->has('email')) $user->email = $request->email;
+        if ($request->has('name'))     $user->name = $request->name;
+        if ($request->has('email'))    $user->email = $request->email;
         if ($request->has('password')) $user->password = Hash::make($request->password);
-        if ($request->has('role')) $user->role = $request->role;
+        if ($request->has('role'))     $user->role = $request->role;
 
         $user->save();
 
-        return response()->json($user);
+        // MAJ des cliniques associées
+        if ($request->has('clinique_ids')) {
+            $user->cliniques()->sync($request->clinique_ids);
+        }
+
+        return response()->json($user->load('cliniques'));
     }
 
     /**

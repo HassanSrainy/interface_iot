@@ -7,6 +7,7 @@ import { AlertsPanel } from "./alerts-panel"
 import { Activity, Thermometer, Droplets, Zap } from "lucide-react"
 import { CapteurWithRelations, Alerte } from "../../types/domain"
 
+
 interface DashboardOverviewProps {
   sensors: Sensor[] | CapteurWithRelations[]
   alertes?: Alerte[]

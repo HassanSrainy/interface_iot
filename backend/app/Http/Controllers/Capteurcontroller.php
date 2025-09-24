@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use App\Models\Capteur;
 
 class CapteurController extends Controller
@@ -13,7 +14,7 @@ class CapteurController extends Controller
     public function index()
     {
         // Récupérer tous les capteurs avec leur famille, service, mesures et alertes
-        $capteurs = Capteur::with(['famille.type', 'service.floor.clinique', 'mesures', 'alertes'])->get();
+        $capteurs = Capteur::with(['famille.type', 'service.floor.clinique', 'mesures', 'alertes','derniereMesure'])->get();
         return response()->json($capteurs);
     }
 
@@ -33,9 +34,21 @@ class CapteurController extends Controller
             'seuil_min' => 'nullable|numeric',
             'seuil_max' => 'nullable|numeric',
             'adresse_ip' => 'nullable|ip',
+            // Regex MAC: accepte XX:XX:XX:XX:XX:XX ou XX-XX-... ou XXXXXXXXXXXX
+            'adresse_mac' => ['nullable', 'regex:/^([0-9A-Fa-f]{2}([:-]?)){5}[0-9A-Fa-f]{2}$/'],
         ]);
 
-        $capteur = Capteur::create($validated);
+        try {
+            $capteur = Capteur::create($validated);
+        } catch (\Throwable $e) {
+            Log::error('Capteur::store failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'validated' => $validated,
+            ]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        }
 
         return response()->json($capteur, 201);
     }
@@ -68,6 +81,7 @@ class CapteurController extends Controller
         $validated = $request->validate([
             'famille_id' => 'sometimes|exists:familles,id',
             'service_id' => 'sometimes|exists:services,id',
+            // allow same matricule for the current capteur
             'matricule' => 'sometimes|string|unique:capteurs,matricule,' . $id,
             'date_installation' => 'nullable|date',
             'date_derniere_connexion' => 'nullable|date',
@@ -75,9 +89,21 @@ class CapteurController extends Controller
             'seuil_min' => 'nullable|numeric',
             'seuil_max' => 'nullable|numeric',
             'adresse_ip' => 'nullable|ip',
+            'adresse_mac' => ['nullable', 'regex:/^([0-9A-Fa-f]{2}([:-]?)){5}[0-9A-Fa-f]{2}$/'],
         ]);
 
-        $capteur->update($validated);
+        try {
+            $capteur->update($validated);
+        } catch (\Throwable $e) {
+            Log::error('Capteur::update failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'validated' => $validated,
+                'capteur_id' => $id,
+            ]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        }
 
         return response()->json($capteur);
     }

@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('nom');
             $table->string('adresse')->nullable();
+            $table->string('ville')->nullable(); // ✅ ajouté ici
             $table->timestamps();
         });
     }
