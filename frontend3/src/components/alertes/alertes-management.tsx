@@ -1,27 +1,22 @@
-import { useState, useEffect } from 'react'
+// frontend3/src/components/alertes/AlertesManagement.tsx
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '../ui/button'
-import { Card, CardContent } from '../ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { AlertTriangle, CheckCircle, XCircle, Search, Filter } from 'lucide-react'
+import { Search, Filter } from 'lucide-react'
 
+/* ---------- Types ---------- */
 interface Sensor {
   id: string
   matricule?: string
-  famille_id?: number
-  service_id?: number
-  date_installation?: string
-  date_derniere_connexion?: string
-  date_derniere_deconnexion?: string
-  seuil_min?: number
-  seuil_max?: number
-  adresse_ip?: string
-  created_at?: string
-  updated_at?: string
+  // autres champs optionnels...
 }
+
+type RawStatut = 'non_lue' | 'active' | 'resolue' | 'ignoree' | 'actif' | 'inactif' | string
 
 interface Alerte {
   id: number
@@ -30,207 +25,224 @@ interface Alerte {
   type: string
   valeur?: number
   date: string
-  statut: 'non_lue' | 'active' | 'resolue' | 'ignoree'
-  created_at?: string
-  updated_at?: string
+  statut: RawStatut
   capteur?: Sensor
-  mesure?: {
-    id: number
-    capteur_id: number
-    valeur: number
-    date_mesure: string
-    created_at: string
-    updated_at: string
-  } | null
 }
 
+/* ---------- Helpers ---------- */
+const isActiveStatus = (s: RawStatut) => {
+  return s === 'active' || s === 'non_lue' || s === 'actif'
+}
+const isInactiveStatus = (s: RawStatut) => {
+  return s === 'resolue' || s === 'ignoree' || s === 'inactif'
+}
+
+/* ---------- Component ---------- */
 export function AlertesManagement() {
   const [alertes, setAlertes] = useState<Alerte[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [filterPriority, setFilterPriority] = useState<string>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'actif' | 'inactif'>('all')
+  const [filterType, setFilterType] = useState<'all' | string>('all')
 
-  // Récupération des alertes depuis l'API
+  // Fetch alerts (read-only)
   useEffect(() => {
+    let mounted = true
     const fetchAlertes = async () => {
       try {
         setLoading(true)
         const res = await fetch('http://127.0.0.1:8000/api/alertes')
         if (!res.ok) throw new Error('Erreur lors du chargement des alertes')
         const data = await res.json()
-        setAlertes(data)
+        if (!mounted) return
+        // Supporte plusieurs formes de payload (array ou { data: [...] })
+        setAlertes(Array.isArray(data) ? data : data.data ?? [])
       } catch (err: any) {
-        setError(err.message)
+        if (!mounted) return
+        setError(err?.message ?? 'Erreur réseau')
       } finally {
-        setLoading(false)
+        if (mounted) setLoading(false)
       }
     }
     fetchAlertes()
+    return () => { mounted = false }
   }, [])
 
-  // Actions pour résoudre ou ignorer une alerte
-  const handleResolveAlert = async (alerteId: number) => {
+  // Refresh helper
+  const refresh = async () => {
+    setLoading(true)
+    setError(null)
     try {
-      await fetch(`http://127.0.0.1:8000/api/alertes/${alerteId}/resolve`, {
-        method: 'PATCH'
-      })
-      setAlertes(prev =>
-        prev.map(a => (a.id === alerteId ? { ...a, statut: 'resolue' } : a))
-      )
-    } catch (err) {
-      console.error(err)
+      const res = await fetch('http://127.0.0.1:8000/api/alertes')
+      if (!res.ok) throw new Error('Erreur lors du rafraîchissement')
+      const data = await res.json()
+      setAlertes(Array.isArray(data) ? data : data.data ?? [])
+    } catch (err: any) {
+      setError(err?.message ?? 'Erreur réseau')
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleIgnoreAlert = async (alerteId: number) => {
-    try {
-      await fetch(`http://127.0.0.1:8000/api/alertes/${alerteId}/ignore`, {
-        method: 'PATCH'
-      })
-      setAlertes(prev =>
-        prev.map(a => (a.id === alerteId ? { ...a, statut: 'ignoree' } : a))
-      )
-    } catch (err) {
-      console.error(err)
-    }
-  }
+  // available types for filter
+  const types = useMemo(() => {
+    const s = new Set<string>()
+    alertes.forEach(a => { if (a.type) s.add(a.type) })
+    return ['all', ...Array.from(s)]
+  }, [alertes])
 
-  // Filtres
-  const filteredAlertes = alertes.filter(a => {
-    const matchesSearch =
-      a.capteur?.matricule?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.valeur?.toString().includes(searchTerm) ||
-      a.id.toString().includes(searchTerm)
+  // filtered alertes (search + status + type)
+  const filteredAlertes = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    return alertes.filter(a => {
+      const matchesSearch =
+        q === '' ||
+        (a.capteur?.matricule ?? '').toString().toLowerCase().includes(q) ||
+        (a.type ?? '').toLowerCase().includes(q) ||
+        (a.valeur ?? '').toString().includes(q) ||
+        a.id.toString().includes(q)
 
-    const matchesStatus = filterStatus === 'all' || a.statut === filterStatus
-    const matchesPriority = filterPriority === 'all' || a.type === filterPriority
+      const matchesStatus =
+        filterStatus === 'all' ||
+        (filterStatus === 'actif' && isActiveStatus(a.statut)) ||
+        (filterStatus === 'inactif' && isInactiveStatus(a.statut))
 
-    return matchesSearch && matchesStatus && matchesPriority
-  })
+      const matchesType = filterType === 'all' || a.type === filterType
 
-  const activeAlertes = alertes.filter(a => a.statut === 'active')
-  const resolvedAlertes = alertes.filter(a => a.statut === 'resolue')
-  const ignoredAlertes = alertes.filter(a => a.statut === 'ignoree')
+      return matchesSearch && matchesStatus && matchesType
+    })
+  }, [alertes, searchTerm, filterStatus, filterType])
+
+  const counts = useMemo(() => ({
+    total: alertes.length,
+    actif: alertes.filter(a => isActiveStatus(a.statut)).length,
+    inactif: alertes.filter(a => isInactiveStatus(a.statut)).length
+  }), [alertes])
 
   if (loading) return <p>Chargement des alertes...</p>
   if (error) return <p className="text-red-500">{error}</p>
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Gestion des Alertes</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Gestion des Alertes</h1>
+          <p className="text-sm text-muted-foreground">Affichage des alertes (lecture seule)</p>
+        </div>
 
-      {/* Filtres */}
+        <div className="flex items-center space-x-3">
+          <div className="text-sm">
+            <div>Total: <span className="font-medium">{counts.total}</span></div>
+            <div>Actives: <span className="font-medium">{counts.actif}</span></div>
+            <div>Inactives: <span className="font-medium">{counts.inactif}</span></div>
+          </div>
+          <Button onClick={refresh} variant="ghost" size="sm">Rafraîchir</Button>
+        </div>
+      </div>
+
+      {/* Filters */}
       <Card>
-        <CardContent className="flex flex-col md:flex-row gap-4">
+        <CardContent className="flex flex-col md:flex-row gap-4 items-center">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par matricule, type ou valeur..."
+              className="pl-9"
+              placeholder="Rechercher par matricule, type, valeur, id..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9"
             />
           </div>
-          <div className="flex gap-2">
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
+
+          <div className="flex gap-2 items-center">
+            <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
               <SelectTrigger className="w-40">
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue placeholder="Statut" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="resolue">Résolue</SelectItem>
-                <SelectItem value="ignoree">Ignorée</SelectItem>
-                <SelectItem value="non_lue">Non lue</SelectItem>
+                <SelectItem value="actif">Actif</SelectItem>
+                <SelectItem value="inactif">Inactif</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={filterPriority} onValueChange={setFilterPriority}>
-              <SelectTrigger className="w-40">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Priorité" />
+
+            <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Type d'alerte" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toutes priorités</SelectItem>
-                <SelectItem value="high">Haute</SelectItem>
-                <SelectItem value="medium">Moyenne</SelectItem>
-                <SelectItem value="low">Basse</SelectItem>
+                {types.map(t => <SelectItem key={t} value={t}>{t === 'all' ? 'Toutes les types' : t}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabs */}
+      {/* Tabs + table */}
       <Tabs defaultValue="all" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="all">Toutes ({alertes.length})</TabsTrigger>
-          <TabsTrigger value="active">Actives ({activeAlertes.length})</TabsTrigger>
-          <TabsTrigger value="resolved">Résolues ({resolvedAlertes.length})</TabsTrigger>
-          <TabsTrigger value="ignored">Ignorées ({ignoredAlertes.length})</TabsTrigger>
-        </TabsList>
+        <Card>
+          <CardHeader>
+            <CardTitle>Alertes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TabsList>
+              <TabsTrigger value="all">Toutes ({counts.total})</TabsTrigger>
+              <TabsTrigger value="actif">Actives ({counts.actif})</TabsTrigger>
+              <TabsTrigger value="inactif">Inactives ({counts.inactif})</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="all">
-          <AlertesTable
-            alertes={filteredAlertes}
-            onResolveAlert={handleResolveAlert}
-            onIgnoreAlert={handleIgnoreAlert}
-            showActions={true}
-          />
-        </TabsContent>
+            <div className="mt-4">
+              <TabsContent value="all">
+                <AlertesTable alertes={filteredAlertes} />
+              </TabsContent>
 
-        <TabsContent value="active">
-          <AlertesTable
-            alertes={filteredAlertes.filter(a => a.statut === 'active')}
-            onResolveAlert={handleResolveAlert}
-            onIgnoreAlert={handleIgnoreAlert}
-            showActions={true}
-          />
-        </TabsContent>
+              <TabsContent value="actif">
+                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} />
+              </TabsContent>
 
-        <TabsContent value="resolved">
-          <AlertesTable
-            alertes={filteredAlertes.filter(a => a.statut === 'resolue')}
-            onResolveAlert={handleResolveAlert}
-            onIgnoreAlert={handleIgnoreAlert}
-            showActions={false}
-          />
-        </TabsContent>
-
-        <TabsContent value="ignored">
-          <AlertesTable
-            alertes={filteredAlertes.filter(a => a.statut === 'ignoree')}
-            onResolveAlert={handleResolveAlert}
-            onIgnoreAlert={handleIgnoreAlert}
-            showActions={false}
-          />
-        </TabsContent>
+              <TabsContent value="inactif">
+                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} />
+              </TabsContent>
+            </div>
+          </CardContent>
+        </Card>
       </Tabs>
     </div>
   )
 }
 
-interface AlertesTableProps {
-  alertes: Alerte[]
-  onResolveAlert: (alerteId: number) => void
-  onIgnoreAlert: (alerteId: number) => void
-  showActions: boolean
-}
+/* ---------- Table component (lecture seule) ---------- */
 
-function AlertesTable({ alertes, onResolveAlert, onIgnoreAlert, showActions }: AlertesTableProps) {
+function AlertesTable({ alertes }: { alertes: Alerte[] }) {
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  const statutBadge = (s: RawStatut) => {
+    if (isActiveStatus(s)) return <Badge className="bg-yellow-100 text-yellow-800">Actif</Badge>
+    if (isInactiveStatus(s)) return <Badge className="bg-green-100 text-green-800">Inactif</Badge>
+    return <Badge>{s}</Badge>
+  }
+
+  const typeBadge = (t: string) => {
+    const tl = t.toLowerCase()
+    if (tl.includes('deconn') || tl.includes('panne')) return <Badge className="bg-red-100 text-red-700">{t}</Badge>
+    if (tl.includes('high') || tl.includes('haut')) return <Badge className="bg-orange-100 text-orange-700">{t}</Badge>
+    if (tl.includes('low') || tl.includes('bas') || tl.includes('lower')) return <Badge className="bg-blue-100 text-blue-700">{t}</Badge>
+    return <Badge>{t}</Badge>
   }
 
   return (
@@ -244,35 +256,25 @@ function AlertesTable({ alertes, onResolveAlert, onIgnoreAlert, showActions }: A
               <TableHead>Valeur</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Date</TableHead>
-              {showActions && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
+
           <TableBody>
+            {alertes.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                  Aucune alerte trouvée.
+                </TableCell>
+              </TableRow>
+            )}
+
             {alertes.map(a => (
               <TableRow key={a.id}>
-                <TableCell>{a.capteur?.matricule ?? 'N/A'}</TableCell>
-                <TableCell>
-                  <Badge>{a.type}</Badge>
-                </TableCell>
-                <TableCell>{a.valeur ?? 'N/A'}</TableCell>
-                <TableCell>
-                  <Badge>{a.statut}</Badge>
-                </TableCell>
-                <TableCell>{formatDate(a.date)}</TableCell>
-                {showActions && (
-                  <TableCell>
-                    {a.statut === 'active' && (
-                      <div className="flex space-x-2">
-                        <Button size="sm" variant="outline" onClick={() => onResolveAlert(a.id)}>
-                          Résoudre
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => onIgnoreAlert(a.id)}>
-                          Ignorer
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                )}
+                <TableCell className="font-medium">{a.capteur?.matricule ?? ('#' + (a.capteur_id ?? 'N/A'))}</TableCell>
+                <TableCell>{typeBadge(a.type)}</TableCell>
+                <TableCell>{a.valeur ?? '—'}</TableCell>
+                <TableCell>{statutBadge(a.statut)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatDate(a.date)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

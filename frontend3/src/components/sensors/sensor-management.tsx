@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '../ui/alert-dialog';
-import { Plus, Edit, Trash2, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Wifi, WifiOff } from 'lucide-react';
 import type { AxiosError } from 'axios';
 
 // ---- imports API (tes helpers existants) ----
@@ -53,6 +53,8 @@ export interface Sensor {
     valeur: number;
     date_mesure: string;
   } | null;
+  // status lu directement depuis la table ('online' | 'offline')
+  status?: 'online' | 'offline' | null;
 }
 
 type ValidationErrors = Record<string, string[]>;
@@ -361,39 +363,37 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     setServicesOptions([]);
   };
 
-  /* ---------- Status icon ---------- */
+  /* ---------- Status icon (USE DB STATUS only) ---------- */
   const getStatusIcon = (sensor: Sensor) => {
-    const lastConn = sensor.date_derniere_connexion ? new Date(sensor.date_derniere_connexion) : null;
-    const lastDisconn = sensor.date_derniere_deconnexion ? new Date(sensor.date_derniere_deconnexion) : null;
-    if (!lastConn || (lastDisconn && lastConn < lastDisconn)) return <WifiOff className="w-4 h-4 text-red-500" />;
-    if (sensor.alertes?.some(a => a.type === 'high' || a.type === 'low')) return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
-    return <Wifi className="w-4 h-4 text-green-500" />;
+    // Use status coming from the server (database). Only two visual states:
+    // 'online' => green Wifi, otherwise => red WifiOff
+    if (sensor.status === 'online') return <Wifi className="w-4 h-4 text-green-500" />;
+    return <WifiOff className="w-4 h-4 text-red-500" />;
   };
 
   /* ---------- UI ---------- */
   // Force use of cliniques loaded from API to avoid stale prop
   const clinicsToRender = localCliniques;
-  
+
   function timeAgo(dateString: string) {
-  if (!dateString) return '';
-  
-  const date = new Date(dateString.replace(' ', 'T')); // transforme "YYYY-MM-DD HH:MM:SS" en ISO
-  const now = new Date();
-  const diff = now.getTime() - date.getTime(); // différence en ms
+    if (!dateString) return '';
 
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `il y a ${seconds} seconde${seconds > 1 ? 's' : ''}`;
+    const date = new Date(dateString.replace(' ', 'T')); // transforme "YYYY-MM-DD HH:MM:SS" en ISO
+    const now = new Date();
+    const diff = now.getTime() - date.getTime(); // différence en ms
 
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `il y a ${minutes} minute${minutes > 1 ? 's' : ''}`;
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `il y a ${seconds} seconde${seconds > 1 ? 's' : ''}`;
 
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours} heure${hours > 1 ? 's' : ''}`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `il y a ${minutes} minute${minutes > 1 ? 's' : ''}`;
 
-  const days = Math.floor(hours / 24);
-  return `il y a ${days} jour${days > 1 ? 's' : ''}`;
-}
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `il y a ${hours} heure${hours > 1 ? 's' : ''}`;
 
+    const days = Math.floor(hours / 24);
+    return `il y a ${days} jour${days > 1 ? 's' : ''}`;
+  }
 
   return (
     <div className="space-y-6">
@@ -576,8 +576,8 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
                       <div className="flex flex-col">
                         <span className="font-medium">{sensor.derniere_mesure.valeur}</span>
                         <span className="text-muted-foreground text-xs">
-        {timeAgo(sensor.derniere_mesure.date_mesure)}
-      </span>
+                          {timeAgo(sensor.derniere_mesure.date_mesure)}
+                        </span>
                       </div>
                     ) : (
                       <span className="text-gray-400">—</span>

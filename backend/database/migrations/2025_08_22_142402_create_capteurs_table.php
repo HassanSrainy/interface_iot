@@ -20,6 +20,7 @@ return new class extends Migration
             $table->float('seuil_max')->nullable();
             $table->string('adresse_ip')->nullable();
             $table->string('adresse_mac')->nullable();
+            $table->enum('status', ['online', 'offline'])->default('online'); // <-- champ status
             $table->timestamps();
         });
     }

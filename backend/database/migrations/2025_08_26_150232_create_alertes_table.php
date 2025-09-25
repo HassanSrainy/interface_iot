@@ -13,9 +13,9 @@ return new class extends Migration
             $table->foreignId('capteur_id')->constrained('capteurs')->onDelete('cascade');
             $table->foreignId('mesure_id')->nullable()->constrained('mesures')->onDelete('cascade');
             $table->string('type'); // high, low, panne
-            $table->float('valeur');
+            $table->float('valeur')->nullable();
             $table->timestamp('date')->useCurrent();
-            $table->string('statut')->default('non_lue'); // non_lue, lue
+            $table->string('statut')->default('actif'); // non_lue, lue
             $table->timestamps();
         });
     }

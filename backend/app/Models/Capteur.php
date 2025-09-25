@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Capteur extends Model
 {
     protected $fillable = [
-        'famille_id',    // nouveau champ
+        'famille_id',
         'service_id',
         'matricule',
         'date_installation',
@@ -16,13 +16,15 @@ class Capteur extends Model
         'seuil_min',
         'seuil_max',
         'adresse_ip',
-        'adresse_mac'
+        'adresse_mac',
+        'status', // <-- nouveau champ
     ];
     
     protected $casts = [
         'date_installation' => 'date',
         'date_derniere_connexion' => 'datetime',
         'date_derniere_deconnexion' => 'datetime',
+        // 'status' peut rester string, pas besoin de cast particulier pour enum
     ];
 
     // Relation avec la famille
@@ -44,8 +46,9 @@ class Capteur extends Model
     public function alertes() {
         return $this->hasMany(Alerte::class);
     }
-    public function derniereMesure() {
-    return $this->hasOne(Mesure::class)->latestOfMany('date_mesure');
-}
 
+    // Dernière mesure
+    public function derniereMesure() {
+        return $this->hasOne(Mesure::class)->latestOfMany('date_mesure');
+    }
 }
