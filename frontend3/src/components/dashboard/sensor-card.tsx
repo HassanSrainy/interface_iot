@@ -16,13 +16,11 @@ import {
   BarChart3,
 } from "lucide-react";
 
-/**
- * Interface exportée exactement comme dans ton message précédent
- * (utilise cette interface partout où tu avais besoin de `Sensor`)
- */
+/** Interface Sensor */
 export interface Sensor {
   id: number;
   matricule: string;
+  status?: "online" | "offline";
   date_installation?: string | null;
   date_derniere_connexion?: string | null;
   date_derniere_deconnexion?: string | null;
@@ -34,7 +32,6 @@ export interface Sensor {
   service?: any | null;
   mesures?: any[];
   alertes?: any[];
-  // dernière mesure fournie par l'API (basée sur date_mesure)
   derniere_mesure?: {
     id?: number;
     valeur: number;
@@ -46,12 +43,12 @@ export interface Sensor {
 interface SensorCardProps {
   sensor: Sensor | any;
   showFullHierarchy?: boolean;
-  alertesCount?: number;
+  alertesCount?: number; // nombre d'alertes actives fourni par l'API
   showEvolution?: boolean;
   onShowChart?: (sensorId: number | string) => void;
 }
 
-/** helper icons */
+/** Helper icons */
 const getIcon = (familleOrType?: any) => {
   const type = typeof familleOrType === "string" ? familleOrType : familleOrType?.type?.type;
   switch (type) {
@@ -68,18 +65,14 @@ const getIcon = (familleOrType?: any) => {
   }
 };
 
+/** Vérifie si le capteur est en ligne */
 const isOnline = (sensor: Sensor) => {
-  if (!sensor.date_derniere_connexion) return false;
-  if (!sensor.date_derniere_deconnexion) return true;
-  try {
-    const c = new Date(sensor.date_derniere_connexion).getTime();
-    const d = new Date(sensor.date_derniere_deconnexion).getTime();
-    return c > d;
-  } catch {
-    return false;
-  }
+  if (!sensor?.status) return false;
+  const s = String(sensor.status).toLowerCase().trim();
+  return s === "online";
 };
 
+/** Formate les dates */
 const formatDate = (s?: string | null) => {
   if (!s) return "—";
   const d = new Date(s);
@@ -95,7 +88,7 @@ export function SensorCard({
   onShowChart,
 }: SensorCardProps) {
   const isFullCapteur = !!sensor?.famille;
-  const online = isOnline(sensor as Sensor);
+  const online = isOnline(sensor);
 
   const value =
     sensor?.derniere_mesure?.valeur ??
@@ -121,8 +114,8 @@ export function SensorCard({
     return "bg-green-500";
   };
 
-  const totalAlertes =
-    alertesCount || (Array.isArray(sensor?.alertes) ? sensor.alertes.length : 0);
+  // Utilisation directe du nombre d'alertes actives passé depuis l'API
+  const totalAlertes = alertesCount ?? 0;
 
   return (
     <Card>

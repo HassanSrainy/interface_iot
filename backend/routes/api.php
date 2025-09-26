@@ -31,6 +31,9 @@ Route::apiResource('familles', FamilleController::class);
 // Nested routes pour relations
 Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController::class, 'byClinique']);
 Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);
+// routes/api.php
+Route::get('/capteurs/{id}/alertes/nbr', [CapteurController::class, 'alertesCount']);
+
 
 Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {
     return $request->user();

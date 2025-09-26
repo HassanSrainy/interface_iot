@@ -123,4 +123,29 @@ class CapteurController extends Controller
 
         return response()->json(['message' => 'Capteur supprimé avec succès']);
     }
+    /**
+ * Retourne le nombre total et actif d'alertes pour un capteur donné
+ */
+public function alertesCount(string $id)
+{
+    $capteur = Capteur::withCount([
+        'alertes', // total
+        'alertes as alertes_actives_count' => function ($query) {
+            $query->where('statut', 'actif');
+        }
+    ])->find($id);
+
+    if (!$capteur) {
+        return response()->json(['message' => 'Capteur non trouvé'], 404);
+    }
+
+    return response()->json([
+        'capteur_id' => $capteur->id,
+        'total_alertes' => $capteur->alertes_count,
+        'active_alertes' => $capteur->alertes_actives_count,
+    ]);
+}
+
+
+    
 }

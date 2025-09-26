@@ -1,158 +1,388 @@
-// frontend3/src/components/alertes/AlertesManagement.tsx
-import { useState, useEffect, useMemo } from 'react'
-import { Button } from '../ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { Badge } from '../ui/badge'
-import { Input } from '../ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { Search, Filter } from 'lucide-react'
+// src/components/alertes/alertes-management.tsx
+import { useState, useEffect, useMemo } from "react";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Input } from "../ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import {
+  Search,
+  Filter,
+  WifiOff,
+  Zap,
+  ArrowUp,
+  ArrowDown,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  X,
+} from "lucide-react";
 
-/* ---------- Types ---------- */
-interface Sensor {
-  id: string
-  matricule?: string
-  // autres champs optionnels...
-}
-
-type RawStatut = 'non_lue' | 'active' | 'resolue' | 'ignoree' | 'actif' | 'inactif' | string
-
-interface Alerte {
-  id: number
-  capteur_id?: number
-  mesure_id?: number | null
-  type: string
-  valeur?: number
-  date: string
-  statut: RawStatut
-  capteur?: Sensor
-}
+import { getAlertes, Alerte, RawStatut } from "./alertes-api";
 
 /* ---------- Helpers ---------- */
-const isActiveStatus = (s: RawStatut) => {
-  return s === 'active' || s === 'non_lue' || s === 'actif'
-}
-const isInactiveStatus = (s: RawStatut) => {
-  return s === 'resolue' || s === 'ignoree' || s === 'inactif'
-}
+const isActiveStatus = (s: RawStatut) => s === "actif";
+const isInactiveStatus = (s: RawStatut) => s === "inactif";
 
-/* ---------- Component ---------- */
+const isDeconnexion = (t: string) =>
+  t?.toLowerCase().includes("deconn") || t?.toLowerCase().includes("panne");
+const isHigh = (t: string) => {
+  const tl = t?.toLowerCase();
+  return tl?.includes("high") || tl?.includes("haut") || tl?.includes("max");
+};
+const isLow = (t: string) => {
+  const tl = t?.toLowerCase();
+  return (
+    tl?.includes("low") ||
+    tl?.includes("bas") ||
+    tl?.includes("min") ||
+    tl?.includes("lower")
+  );
+};
+
+/* ---------- Component (no JSX namespace types) ---------- */
 export function AlertesManagement() {
-  const [alertes, setAlertes] = useState<Alerte[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [alertes, setAlertes] = useState<Alerte[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'actif' | 'inactif'>('all')
-  const [filterType, setFilterType] = useState<'all' | string>('all')
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "actif" | "inactif">(
+    "all"
+  );
+  const [filterType, setFilterType] = useState<"all" | string>("all");
 
-  // Fetch alerts (read-only)
   useEffect(() => {
-    let mounted = true
-    const fetchAlertes = async () => {
+    let mounted = true;
+    const fetchData = async () => {
       try {
-        setLoading(true)
-        const res = await fetch('http://127.0.0.1:8000/api/alertes')
-        if (!res.ok) throw new Error('Erreur lors du chargement des alertes')
-        const data = await res.json()
-        if (!mounted) return
-        // Supporte plusieurs formes de payload (array ou { data: [...] })
-        setAlertes(Array.isArray(data) ? data : data.data ?? [])
+        setLoading(true);
+        const data = await getAlertes();
+        if (mounted) setAlertes(data);
       } catch (err: any) {
-        if (!mounted) return
-        setError(err?.message ?? 'Erreur réseau')
+        if (mounted) setError(err?.message ?? "Erreur réseau");
       } finally {
-        if (mounted) setLoading(false)
+        if (mounted) setLoading(false);
       }
-    }
-    fetchAlertes()
-    return () => { mounted = false }
-  }, [])
+    };
+    fetchData();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  // Refresh helper
   const refresh = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/alertes')
-      if (!res.ok) throw new Error('Erreur lors du rafraîchissement')
-      const data = await res.json()
-      setAlertes(Array.isArray(data) ? data : data.data ?? [])
+      const data = await getAlertes();
+      setAlertes(data);
     } catch (err: any) {
-      setError(err?.message ?? 'Erreur réseau')
+      setError(err?.message ?? "Erreur réseau");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  // available types for filter
+  /* counts */
+  const counts = useMemo(() => {
+    const total = alertes.length;
+    const actif = alertes.filter((a) => isActiveStatus(a.statut)).length;
+    const inactif = alertes.filter((a) => isInactiveStatus(a.statut)).length;
+
+    const deconn = alertes.filter((a) => isDeconnexion(a.type));
+    const high = alertes.filter((a) => isHigh(a.type));
+    const low = alertes.filter((a) => isLow(a.type));
+
+    const count = (arr: Alerte[]) => ({
+      total: arr.length,
+      actif: arr.filter((a) => isActiveStatus(a.statut)).length,
+      inactif: arr.filter((a) => isInactiveStatus(a.statut)).length,
+    });
+
+    return {
+      total,
+      actif,
+      inactif,
+      deconnexion: count(deconn),
+      high: count(high),
+      low: count(low),
+    };
+  }, [alertes]);
+
   const types = useMemo(() => {
-    const s = new Set<string>()
-    alertes.forEach(a => { if (a.type) s.add(a.type) })
-    return ['all', ...Array.from(s)]
-  }, [alertes])
+    const s = new Set<string>();
+    alertes.forEach((a) => {
+      if (a.type) s.add(a.type);
+    });
+    return ["all", ...Array.from(s)];
+  }, [alertes]);
 
-  // filtered alertes (search + status + type)
   const filteredAlertes = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    return alertes.filter(a => {
+    const q = searchTerm.trim().toLowerCase();
+    return alertes.filter((a) => {
       const matchesSearch =
-        q === '' ||
-        (a.capteur?.matricule ?? '').toString().toLowerCase().includes(q) ||
-        (a.type ?? '').toLowerCase().includes(q) ||
-        (a.valeur ?? '').toString().includes(q) ||
-        a.id.toString().includes(q)
+        q === "" ||
+        (a.capteur?.matricule ?? "")
+          .toString()
+          .toLowerCase()
+          .includes(q) ||
+        (a.type ?? "").toLowerCase().includes(q) ||
+        (a.valeur ?? "").toString().includes(q) ||
+        a.id.toString().includes(q);
 
       const matchesStatus =
-        filterStatus === 'all' ||
-        (filterStatus === 'actif' && isActiveStatus(a.statut)) ||
-        (filterStatus === 'inactif' && isInactiveStatus(a.statut))
+        filterStatus === "all" ||
+        (filterStatus === "actif" && isActiveStatus(a.statut)) ||
+        (filterStatus === "inactif" && isInactiveStatus(a.statut));
 
-      const matchesType = filterType === 'all' || a.type === filterType
+      const matchesType = filterType === "all" || a.type === filterType;
 
-      return matchesSearch && matchesStatus && matchesType
-    })
-  }, [alertes, searchTerm, filterStatus, filterType])
+      return matchesSearch && matchesStatus && matchesType;
+    });
+  }, [alertes, searchTerm, filterStatus, filterType]);
 
-  const counts = useMemo(() => ({
-    total: alertes.length,
-    actif: alertes.filter(a => isActiveStatus(a.statut)).length,
-    inactif: alertes.filter(a => isInactiveStatus(a.statut)).length
-  }), [alertes])
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateString;
+    }
+  };
 
-  if (loading) return <p>Chargement des alertes...</p>
-  if (error) return <p className="text-red-500">{error}</p>
+  const statutBadge = (s: RawStatut) => {
+    if (isActiveStatus(s))
+      return <Badge className="bg-yellow-100 text-yellow-800">Actif</Badge>;
+    if (isInactiveStatus(s))
+      return <Badge className="bg-green-100 text-green-800">Inactif</Badge>;
+    return <Badge>{s}</Badge>;
+  };
+
+  const typeBadge = (t: string) => {
+    if (isDeconnexion(t))
+      return <Badge className="bg-red-100 text-red-700">{t}</Badge>;
+    if (isHigh(t)) return <Badge className="bg-orange-100 text-orange-700">{t}</Badge>;
+    if (isLow(t)) return <Badge className="bg-blue-100 text-blue-700">{t}</Badge>;
+    return <Badge>{t}</Badge>;
+  };
+
+  if (loading) return <p>Chargement des alertes...</p>;
+  if (error) return <p className="text-red-500">{error}</p>;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header row with icon refresh */}
+      <div className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-semibold">Gestion des Alertes</h1>
-          <p className="text-sm text-muted-foreground">Affichage des alertes (lecture seule)</p>
+          <h1 className="text-2xl font-semibold">Tableau de bord — Alertes</h1>
+          <p className="text-sm text-muted-foreground">
+            Vue synthétique : totaux & répartition par type
+          </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="text-sm">
-            <div>Total: <span className="font-medium">{counts.total}</span></div>
-            <div>Actives: <span className="font-medium">{counts.actif}</span></div>
-            <div>Inactives: <span className="font-medium">{counts.inactif}</span></div>
-          </div>
-          <Button onClick={refresh} variant="ghost" size="sm">Rafraîchir</Button>
+        <div className="flex items-center gap-3">
+          {/* Refresh icon-only button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={refresh}
+            aria-label="Rafraîchir les alertes"
+            title="Rafraîchir"
+            className="p-2"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </Button>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* KPI grid (3 columns desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Total */}
+        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
+          <div>
+            <div className="text-xs text-muted-foreground">Total alertes</div>
+            <div className="text-2xl font-semibold">{counts.total}</div>
+            <div className="text-xs text-muted-foreground mt-1">Historique complet</div>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="p-3 rounded-md bg-slate-50">
+              <Zap className="w-6 h-6 text-slate-700" />
+            </div>
+            {/* mini proportion bar */}
+            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
+              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`, backgroundColor: '#F59E0B' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Actives */}
+        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
+          <div>
+            <div className="text-xs text-muted-foreground">Actives</div>
+            <div className="text-2xl font-semibold text-yellow-600">{counts.actif}</div>
+            <div className="text-xs text-muted-foreground mt-1">À traiter</div>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="p-3 rounded-md bg-yellow-50">
+              <CheckCircle className="w-6 h-6 text-yellow-600" />
+            </div>
+            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
+              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`, backgroundColor: '#F59E0B' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Inactives */}
+        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
+          <div>
+            <div className="text-xs text-muted-foreground">Inactives</div>
+            <div className="text-2xl font-semibold text-green-600">{counts.inactif}</div>
+            <div className="text-xs text-muted-foreground mt-1">Résolues</div>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="p-3 rounded-md bg-green-50">
+              <XCircle className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
+              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.inactif / counts.total) * 100 : 0}%`, backgroundColor: '#10B981' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Category cards grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="hover:shadow-lg transition">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <WifiOff className="w-4 h-4 text-red-600" /> Déconnexions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-muted-foreground">Total</div>
+                <div className="text-xl font-semibold">{counts.deconnexion.total}</div>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Actif</span>
+                  <span className="ml-2 font-medium text-yellow-600">{counts.deconnexion.actif}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-muted-foreground">Inactif</span>
+                  <span className="ml-2 font-medium text-green-600">{counts.deconnexion.inactif}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Capteurs n'ayant pas communiqué depuis le timeout.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowUp className="w-4 h-4 text-orange-600" /> Hors seuil — High
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-muted-foreground">Total</div>
+                <div className="text-xl font-semibold">{counts.high.total}</div>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Actif</span>
+                  <span className="ml-2 font-medium text-yellow-600">{counts.high.actif}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-muted-foreground">Inactif</span>
+                  <span className="ml-2 font-medium text-green-600">{counts.high.inactif}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Mesures supérieures au seuil max.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowDown className="w-4 h-4 text-blue-600" /> Hors seuil — Low
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-muted-foreground">Total</div>
+                <div className="text-xl font-semibold">{counts.low.total}</div>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Actif</span>
+                  <span className="ml-2 font-medium text-yellow-600">{counts.low.actif}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-muted-foreground">Inactif</span>
+                  <span className="ml-2 font-medium text-green-600">{counts.low.inactif}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Mesures inférieures au seuil min.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters row with improved search (clear button) */}
       <Card>
         <CardContent className="flex flex-col md:flex-row gap-4 items-center">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              className="pl-9"
+              className="pl-9 pr-10"
               placeholder="Rechercher par matricule, type, valeur, id..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button
+                aria-label="Effacer"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-2.5 p-1 rounded hover:bg-slate-100"
+                title="Effacer"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
           </div>
 
           <div className="flex gap-2 items-center">
@@ -173,7 +403,11 @@ export function AlertesManagement() {
                 <SelectValue placeholder="Type d'alerte" />
               </SelectTrigger>
               <SelectContent>
-                {types.map(t => <SelectItem key={t} value={t}>{t === 'all' ? 'Toutes les types' : t}</SelectItem>)}
+                {types.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t === "all" ? "Tous les types" : t}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -187,63 +421,37 @@ export function AlertesManagement() {
             <CardTitle>Alertes</CardTitle>
           </CardHeader>
           <CardContent>
-            <TabsList>
-              <TabsTrigger value="all">Toutes ({counts.total})</TabsTrigger>
-              <TabsTrigger value="actif">Actives ({counts.actif})</TabsTrigger>
-              <TabsTrigger value="inactif">Inactives ({counts.inactif})</TabsTrigger>
-            </TabsList>
+            <div className="mb-4">
+              <TabsList>
+                <TabsTrigger value="all">Toutes ({counts.total})</TabsTrigger>
+                <TabsTrigger value="actif">Actives ({counts.actif})</TabsTrigger>
+                <TabsTrigger value="inactif">Inactives ({counts.inactif})</TabsTrigger>
+              </TabsList>
+            </div>
 
-            <div className="mt-4">
+            <div>
               <TabsContent value="all">
-                <AlertesTable alertes={filteredAlertes} />
+                <AlertesTable alertes={filteredAlertes} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
               </TabsContent>
 
               <TabsContent value="actif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} />
+                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
               </TabsContent>
 
               <TabsContent value="inactif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} />
+                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
               </TabsContent>
             </div>
           </CardContent>
         </Card>
       </Tabs>
     </div>
-  )
+  );
 }
 
-/* ---------- Table component (lecture seule) ---------- */
-
-function AlertesTable({ alertes }: { alertes: Alerte[] }) {
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      return date.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    } catch {
-      return dateString
-    }
-  }
-
-  const statutBadge = (s: RawStatut) => {
-    if (isActiveStatus(s)) return <Badge className="bg-yellow-100 text-yellow-800">Actif</Badge>
-    if (isInactiveStatus(s)) return <Badge className="bg-green-100 text-green-800">Inactif</Badge>
-    return <Badge>{s}</Badge>
-  }
-
-  const typeBadge = (t: string) => {
-    const tl = t.toLowerCase()
-    if (tl.includes('deconn') || tl.includes('panne')) return <Badge className="bg-red-100 text-red-700">{t}</Badge>
-    if (tl.includes('high') || tl.includes('haut')) return <Badge className="bg-orange-100 text-orange-700">{t}</Badge>
-    if (tl.includes('low') || tl.includes('bas') || tl.includes('lower')) return <Badge className="bg-blue-100 text-blue-700">{t}</Badge>
-    return <Badge>{t}</Badge>
-  }
+/* ---------- Table component (no JSX typings) ---------- */
+function AlertesTable(props: { alertes: Alerte[]; formatDate: (s: string) => string; statutBadge: (s: RawStatut) => any; typeBadge: (t: string) => any; }) {
+  const { alertes, formatDate, statutBadge, typeBadge } = props;
 
   return (
     <Card>
@@ -268,18 +476,22 @@ function AlertesTable({ alertes }: { alertes: Alerte[] }) {
               </TableRow>
             )}
 
-            {alertes.map(a => (
+            {alertes.map((a) => (
               <TableRow key={a.id}>
-                <TableCell className="font-medium">{a.capteur?.matricule ?? ('#' + (a.capteur_id ?? 'N/A'))}</TableCell>
+                <TableCell className="font-medium">
+                  {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
+                </TableCell>
                 <TableCell>{typeBadge(a.type)}</TableCell>
-                <TableCell>{a.valeur ?? '—'}</TableCell>
+                <TableCell>{a.valeur ?? "—"}</TableCell>
                 <TableCell>{statutBadge(a.statut)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{formatDate(a.date)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {formatDate(a.date)}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </CardContent>
     </Card>
-  )
+  );
 }

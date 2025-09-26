@@ -21,3 +21,12 @@ export const updateSensor = async (id: number, data: Partial<Sensor>): Promise<S
 export const deleteSensor = async (id: number): Promise<void> => {
   await api.delete(`/capteurs/${id}`);
 };
+export interface SensorAlertCount {
+  capteur_id: number;
+  total_alertes: number;
+  active_alertes: number;
+}
+export const getSensorAlertCount = async (id: number): Promise<SensorAlertCount> => {
+  const res = await api.get(`/capteurs/${id}/alertes/nbr`);
+  return res.data;
+};
