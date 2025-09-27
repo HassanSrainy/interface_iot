@@ -7,28 +7,24 @@ import { AlertesManagement } from "./components/alertes/alertes-management";
 import { UserManagement } from "./components/utilisateurs/utilisateur-management";
 import { DashboardOverview } from './components/dashboard/dashboard-overview';
 import useAuth from "./hooks/useAuth";
-import { useNavigate } from "react-router-dom"; // <-- ajout
+import { useNavigate } from "react-router-dom";
 
 export default function App() {
-  const { user, logout, loading } = useAuth();
-  const navigate = useNavigate(); // <-- ajout
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   // Rediriger vers login si user devient null
   useEffect(() => {
-    if (!loading && !user) {
+    if (user === null) {
       navigate("/login", { replace: true });
     }
-  }, [user, loading, navigate]);
-
-  if (loading) return <div className="flex justify-center items-center h-screen">Chargement...</div>;
+  }, [user, navigate]);
 
   return (
     <div className="min-h-screen bg-gray-50/50">
       <Navbar 
         user={user || { email: "..." }} 
-        onLogout={logout}  // logout déclenche la redirection via useEffect
-        sensorsOnline={5} 
-        totalSensors={10} 
+        onLogout={logout}  
       />
 
       <main className="container mx-auto px-4 py-6">
@@ -42,6 +38,7 @@ export default function App() {
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-4">
+            
             <DashboardOverview 
               sensors={[]} 
               alertes={[]} 

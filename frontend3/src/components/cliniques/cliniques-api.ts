@@ -25,7 +25,11 @@ export interface Capteur {
   nom: string;
   type: string;
   service_id: number;
+  adresse_ip?: string;   // optionnel si parfois null
+  adresse_mac?: string;  // optionnel
+  status?: "online" | "offline"; // optionnel
 }
+
 
 // ----------------- CLINIQUES -----------------
 export const getCliniques = async (): Promise<Clinique[]> => {

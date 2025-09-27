@@ -3,11 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Floor;
-use App\Models\Clinique;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Database\QueryException;
-
 
 class FloorController extends Controller
 {
@@ -25,14 +22,26 @@ class FloorController extends Controller
      */
     public function store(Request $request)
     {
-        $floorsNames = ['Ground Floor', 'First Floor', 'Second Floor'];
-
         $validated = $request->validate([
             'clinique_id' => 'required|exists:cliniques,id',
-            'nom' => ['required', 'string', 'max:255', Rule::in($floorsNames)],
+            'nom' => 'required|string|max:255',
         ]);
 
+        // Normalisation du nom : première lettre majuscule, reste minuscule
+        $validated['nom'] = ucfirst(strtolower(trim($validated['nom'])));
+
         try {
+            // Vérifier si le même nom existe déjà pour la clinique
+            $exists = Floor::where('clinique_id', $validated['clinique_id'])
+                ->whereRaw('LOWER(nom) = ?', [strtolower($validated['nom'])])
+                ->exists();
+
+            if ($exists) {
+                return response()->json([
+                    'message' => "L'étage '{$validated['nom']}' existe déjà pour cette clinique."
+                ], 409);
+            }
+
             $floor = Floor::create($validated);
 
             return response()->json([
@@ -41,14 +50,6 @@ class FloorController extends Controller
             ], 201);
 
         } catch (QueryException $e) {
-            // Vérifier si c’est une violation de clé unique
-            if ($e->getCode() === '23000') {
-                return response()->json([
-                    'message' => "L'étage '{$validated['nom']}' existe déjà pour cette clinique."
-                ], 409); // 409 Conflict
-            }
-
-            // Pour toute autre erreur SQL
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la création de l’étage.'
             ], 500);
@@ -86,6 +87,22 @@ class FloorController extends Controller
             'numero' => 'sometimes|integer',
         ]);
 
+        if (isset($validated['nom'])) {
+            $validated['nom'] = ucfirst(strtolower(trim($validated['nom'])));
+
+            // Vérifier unicité dans la clinique
+            $exists = Floor::where('clinique_id', $validated['clinique_id'] ?? $floor->clinique_id)
+                ->whereRaw('LOWER(nom) = ?', [strtolower($validated['nom'])])
+                ->where('id', '!=', $id)
+                ->exists();
+
+            if ($exists) {
+                return response()->json([
+                    'message' => "Un autre étage avec le nom '{$validated['nom']}' existe déjà dans cette clinique."
+                ], 409);
+            }
+        }
+
         $floor->update($validated);
 
         return response()->json([
@@ -110,13 +127,15 @@ class FloorController extends Controller
         return response()->json(['message' => 'Étage supprimé avec succès'], 200);
     }
 
+    /**
+     * Lister les étages d’une clinique donnée
+     */
     public function byClinique($cliniqueId)
-{
-    $floors = \App\Models\Floor::where('clinique_id', $cliniqueId)
-        ->with('services') // optionnel si tu veux renvoyer aussi les services
-        ->get();
+    {
+        $floors = Floor::where('clinique_id', $cliniqueId)
+            ->with('services.capteurs')
+            ->get();
 
-    return response()->json($floors);
-}
-
+        return response()->json($floors);
+    }
 }

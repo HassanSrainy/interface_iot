@@ -57,6 +57,7 @@ export interface Sensor {
   status?: 'online' | 'offline' | null;
 }
 
+
 type ValidationErrors = Record<string, string[]>;
 
 interface SensorManagementProps {
@@ -402,6 +403,7 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
           <h1 className="text-2xl font-semibold">Gestion des Capteurs</h1>
           <p className="text-muted-foreground">Gérez vos capteurs IoT et leurs mesures</p>
         </div>
+        
 
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
