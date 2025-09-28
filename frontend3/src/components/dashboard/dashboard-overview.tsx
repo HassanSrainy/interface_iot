@@ -1,9 +1,10 @@
+// frontend3/src/components/dashboard/dashboard-overview.tsx
 import React, { useCallback, useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { SensorCard, Sensor } from "./sensor-card";
+import SensorCard, { Sensor } from "./sensor-card";
 import { AlertsPanel } from "./alerts-panel";
 import { ClinicOverview } from "./clinic-overview";
-import { getSensors } from "../sensors/sensor-api";
+import { getSensors, getSensorAlertCount } from "../sensors/sensor-api";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 
 interface DashboardOverviewProps {
@@ -27,28 +28,81 @@ export function DashboardOverview({
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [chartPeriod, setChartPeriod] = useState<PeriodOption>("1h");
   const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+  const [alertesTotalsMap, setAlertesTotalsMap] = useState<Record<number, number>>({});
+  const [alertesActiveMap, setAlertesActiveMap] = useState<Record<number, number>>({});
+  const [loadingSensors, setLoadingSensors] = useState<boolean>(false);
+  const [loadingCounts, setLoadingCounts] = useState<boolean>(false);
 
   const isFullCapteurs = sensors.length > 0 && "famille" in sensors[0];
 
   const loadAll = useCallback(async () => {
     try {
       if (!propsSensors || propsSensors.length === 0) {
+        setLoadingSensors(true);
         const s = await getSensors();
         const normalizedSensors = (s || []).map(sensor => ({
           ...sensor,
           status: sensor.status === null ? undefined : sensor.status,
         }));
         setSensors(normalizedSensors);
+        setLoadingSensors(false);
       } else {
         setSensors(propsSensors);
       }
     } catch (err) {
       console.error("Erreur loadAll:", err);
+      setLoadingSensors(false);
     }
   }, [propsSensors]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
-  useEffect(() => { if (Array.isArray(propsSensors) && propsSensors.length > 0) setSensors(propsSensors); }, [propsSensors]);
+
+  // après avoir chargé "sensors", on récupère counts via endpoint /capteurs/{id}/alertes/nbr
+  useEffect(() => {
+    if (!sensors || sensors.length === 0) return;
+
+    const fetchCountsForAll = async () => {
+      setLoadingCounts(true);
+      try {
+        // Promise.all en parallèle
+        const results = await Promise.all(
+          sensors.map(async (s) => {
+            try {
+              const res = await getSensorAlertCount(Number(s.id));
+              // debug log
+              console.log(`count for sensor ${s.id}:`, res);
+              return { id: Number(s.id), ok: true, payload: res };
+            } catch (err) {
+              console.error(`Erreur getSensorAlertCount(${s.id}):`, err);
+              return { id: Number(s.id), ok: false, payload: null };
+            }
+          })
+        );
+
+        const totals: Record<number, number> = {};
+        const actives: Record<number, number> = {};
+        for (const r of results) {
+          if (r.ok && r.payload) {
+            // la réponse attendue: { capteur_id, total_alertes, active_alertes }
+            totals[r.id] = Number(r.payload.total_alertes ?? 0);
+            actives[r.id] = Number(r.payload.active_alertes ?? 0);
+          } else {
+            totals[r.id] = 0;
+            actives[r.id] = 0;
+          }
+        }
+
+        setAlertesTotalsMap(prev => ({ ...prev, ...totals }));
+        setAlertesActiveMap(prev => ({ ...prev, ...actives }));
+      } catch (err) {
+        console.error("Erreur fetchCountsForAll:", err);
+      } finally {
+        setLoadingCounts(false);
+      }
+    };
+
+    fetchCountsForAll();
+  }, [sensors]);
 
   const filterMeasuresByPeriod = (sensor: Sensor) => {
     if (!sensor.mesures || sensor.mesures.length === 0) return [];
@@ -101,27 +155,50 @@ export function DashboardOverview({
                   <button onClick={() => setChartPeriod("30d")} className="btn">30j</button>
                 </div>
               </div>
-              <SensorChart sensor={selectedSensor} mesures={filterMeasuresByPeriod(selectedSensor)} onBack={() => setSelectedSensor(null)} />
+
+              {/* SensorChart si tu veux l'utiliser */}
+              <div>
+                <h4 className="text-lg font-semibold">Graphique — {selectedSensor?.matricule ?? `#${selectedSensor?.id}`}</h4>
+                <div className="mt-2">
+                  {filterMeasuresByPeriod(selectedSensor).length === 0 ? (
+                    <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={filterMeasuresByPeriod(selectedSensor)} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                        <YAxis />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                        {selectedSensor.seuil_max != null && <ReferenceLine y={selectedSensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />}
+                        {selectedSensor.seuil_min != null && <ReferenceLine y={selectedSensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {sensors.map(sensor => {
-                const sensorAlertes = Array.isArray(alertes) ? alertes.filter(a => a.capteur_id === sensor.id && a.statut === "active") : [];
-                return (
-                  <SensorCard
-                    key={String(sensor.id)}
-                    sensor={sensor}
-                    showFullHierarchy={isFullCapteurs}
-                    alertesCount={sensorAlertes.length}
-                    showEvolution
-                    onShowChart={id => {
-                      const s = sensors.find(x => String(x.id) === String(id)) || sensor;
-                      setSelectedSensor(s as Sensor);
-                      onShowSensorEvolution?.(id);
-                    }}
-                  />
-                );
-              })}
+              {!loadingSensors && sensors.length === 0 && <div className="text-muted-foreground">Aucun capteur trouvé.</div>}
+
+              {sensors.map(sensor => (
+                <SensorCard
+                  key={String(sensor.id)}
+                  sensor={sensor}
+                  showFullHierarchy={isFullCapteurs}
+                  alertesCount={alertesActiveMap[sensor.id] ?? 0}
+                  totalAlertes={alertesTotalsMap[sensor.id] ?? 0}
+                  showEvolution
+                  onShowChart={id => {
+                    const s = sensors.find(x => String(x.id) === String(id)) || sensor;
+                    setSelectedSensor(s as Sensor);
+                    onShowSensorEvolution?.(id);
+                  }}
+                />
+              ))}
+
+             
             </div>
           )}
         </TabsContent>
@@ -137,56 +214,6 @@ export function DashboardOverview({
           <AlertsPanel alertes={alertes} onResolveAlert={onResolveAlert} onIgnoreAlert={onIgnoreAlert} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-/* ---------------- SensorChart avec seuils et points hors seuil ---------------- */
-interface SensorChartProps {
-  sensor: Sensor;
-  mesures: { date: string; value: number }[];
-  onBack?: () => void;
-}
-
-export function SensorChart({ sensor, mesures, onBack }: SensorChartProps) {
-  if (mesures.length === 0)
-    return <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>;
-
-  const minY = sensor.seuil_min != null ? Math.min(sensor.seuil_min, ...mesures.map(d => d.value)) : Math.min(...mesures.map(d => d.value));
-  const maxY = sensor.seuil_max != null ? Math.max(sensor.seuil_max, ...mesures.map(d => d.value)) : Math.max(...mesures.map(d => d.value));
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-lg font-semibold">Graphique — {sensor.matricule ?? `#${sensor.id}`}</h4>
-        {onBack && <button onClick={onBack} className="text-sm underline">Retour</button>}
-      </div>
-
-      <div style={{ width: "100%", height: 300 }}>
-        <ResponsiveContainer>
-          <LineChart data={mesures} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis domain={[minY, maxY]} />
-            <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={props => {
-                const { cx, cy, payload } = props;
-                const valeur = payload.value;
-                const isOutOfRange = (sensor.seuil_max != null && valeur > sensor.seuil_max) ||
-                                     (sensor.seuil_min != null && valeur < sensor.seuil_min);
-                return <circle cx={cx} cy={cy} r={3} fill={isOutOfRange ? "red" : "#3b82f6"} strokeWidth={2} />;
-              }}
-            />
-            {sensor.seuil_max != null && <ReferenceLine y={sensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />}
-            {sensor.seuil_min != null && <ReferenceLine y={sensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
     </div>
   );
 }

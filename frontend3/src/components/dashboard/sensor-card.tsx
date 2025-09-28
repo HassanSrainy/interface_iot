@@ -1,3 +1,4 @@
+// frontend3/src/components/dashboard/sensor-card.tsx
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -16,63 +17,44 @@ import {
   BarChart3,
 } from "lucide-react";
 
-/** Interface Sensor */
 export interface Sensor {
   id: number;
   matricule: string;
-  status?: "online" | "offline";
-  date_installation?: string | null;
-  date_derniere_connexion?: string | null;
-  date_derniere_deconnexion?: string | null;
+  status?: "online" | "offline" | null;
   seuil_min?: number | null;
   seuil_max?: number | null;
-  adresse_ip?: string | null;
-  adresse_mac?: string | null;
   famille?: any | null;
   service?: any | null;
   mesures?: any[];
-  alertes?: any[];
-  derniere_mesure?: {
-    id?: number;
-    valeur: number;
-    date_mesure: string;
-  } | null;
+  derniere_mesure?: { id?: number; valeur: number; date_mesure: string } | null;
 }
 
-/** Props */
 interface SensorCardProps {
   sensor: Sensor | any;
   showFullHierarchy?: boolean;
-  alertesCount?: number; // nombre d'alertes actives fourni par l'API
+  alertesCount?: number; // active_alertes
+  totalAlertes?: number; // total_alertes
   showEvolution?: boolean;
   onShowChart?: (sensorId: number | string) => void;
 }
 
-/** Helper icons */
 const getIcon = (familleOrType?: any) => {
   const type = typeof familleOrType === "string" ? familleOrType : familleOrType?.type?.type;
   switch (type) {
-    case "temperature":
-      return <Thermometer className="h-4 w-4" />;
-    case "humidity":
-      return <Droplets className="h-4 w-4" />;
-    case "pressure":
-      return <Wind className="h-4 w-4" />;
-    case "battery":
-      return <Zap className="h-4 w-4" />;
-    default:
-      return <Thermometer className="h-4 w-4" />;
+    case "temperature": return <Thermometer className="h-4 w-4" />;
+    case "humidity": return <Droplets className="h-4 w-4" />;
+    case "pressure": return <Wind className="h-4 w-4" />;
+    case "battery": return <Zap className="h-4 w-4" />;
+    default: return <Thermometer className="h-4 w-4" />;
   }
 };
 
-/** Vérifie si le capteur est en ligne */
 const isOnline = (sensor: Sensor) => {
   if (!sensor?.status) return false;
   const s = String(sensor.status).toLowerCase().trim();
   return s === "online";
 };
 
-/** Formate les dates */
 const formatDate = (s?: string | null) => {
   if (!s) return "—";
   const d = new Date(s);
@@ -84,17 +66,14 @@ export function SensorCard({
   sensor,
   showFullHierarchy = false,
   alertesCount = 0,
+  totalAlertes = 0,
   showEvolution = false,
   onShowChart,
 }: SensorCardProps) {
   const isFullCapteur = !!sensor?.famille;
   const online = isOnline(sensor);
 
-  const value =
-    sensor?.derniere_mesure?.valeur ??
-    sensor?.mesures?.[0]?.valeur ??
-    0;
-
+  const value = sensor?.derniere_mesure?.valeur ?? sensor?.mesures?.[0]?.valeur ?? 0;
   const unit = sensor?.famille?.unite ?? sensor?.unite ?? "";
 
   const seuilMin = sensor?.seuil_min ?? null;
@@ -113,9 +92,6 @@ export function SensorCard({
     if (value < seuilMin || value > seuilMax) return "bg-red-500";
     return "bg-green-500";
   };
-
-  // Utilisation directe du nombre d'alertes actives passé depuis l'API
-  const totalAlertes = alertesCount ?? 0;
 
   return (
     <Card>
@@ -144,8 +120,7 @@ export function SensorCard({
 
       <CardContent>
         <div className="text-2xl font-bold">
-          {value}
-          {unit}
+          {value}{unit}
         </div>
 
         {seuilMin != null && seuilMax != null && (
@@ -161,11 +136,7 @@ export function SensorCard({
                 <Progress value={100} className="h-2 bg-gray-200" />
                 <div
                   className={`absolute top-0 h-2 rounded-full ${getThresholdColorClass()}`}
-                  style={{
-                    left: `${getThresholdProgress()}%`,
-                    width: "4px",
-                    transform: "translateX(-50%)",
-                  }}
+                  style={{ left: `${getThresholdProgress()}%`, width: "4px", transform: "translateX(-50%)" }}
                 />
               </div>
             </div>
@@ -185,12 +156,18 @@ export function SensorCard({
               {online ? "En ligne" : "Hors ligne"}
             </Badge>
 
-            {totalAlertes > 0 && (
+            {/* badge alertes actives */}
+            {alertesCount > 0 && (
               <Badge variant="destructive" className="text-xs flex items-center">
                 <AlertTriangle className="h-3 w-3 mr-1" />
-                {totalAlertes}
+                {alertesCount}
               </Badge>
             )}
+
+            {/* total alertes (info) */}
+            <div className="text-xs text-muted-foreground ml-2">
+              Total: <span className="font-medium">{totalAlertes ?? 0}</span>
+            </div>
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -204,12 +181,7 @@ export function SensorCard({
           </p>
 
           {showEvolution && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onShowChart?.(sensor?.id ?? "")}
-              className="h-6 px-2 text-xs"
-            >
+            <Button size="sm" variant="outline" onClick={() => onShowChart?.(sensor?.id ?? "")} className="h-6 px-2 text-xs">
               <BarChart3 className="h-3 w-3 mr-1" />
               Graphique
             </Button>
@@ -219,3 +191,5 @@ export function SensorCard({
     </Card>
   );
 }
+
+export default SensorCard;

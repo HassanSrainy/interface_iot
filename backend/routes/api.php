@@ -35,6 +35,7 @@ Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::
 Route::get('/capteurs/{id}/alertes/nbr', [CapteurController::class, 'alertesCount']);
 
 
+
 Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {
     return $request->user();
 });
