@@ -110,3 +110,20 @@ export const updateCapteur = async (id: number, data: Partial<Capteur>): Promise
 export const deleteCapteur = async (id: number): Promise<void> => {
   await api.delete(`/capteurs/${id}`);
 };
+// get summary for one clinique
+export const getCliniqueSummary = async (cliniqueId: number): Promise<{ id:number; total_alertes:number; active_alertes:number } | null> => {
+  const res = await api.get(`/cliniques/${cliniqueId}/summary`);
+  return res.data ?? null;
+};
+
+// get alertes for one clinique (work if you already have /cliniques/{id}/alertes)
+export const getAlertesByClinique = async (cliniqueId: number): Promise<any[]> => {
+  const res = await api.get(`/cliniques/${cliniqueId}/alertes`);
+  return Array.isArray(res.data) ? res.data : res.data.data ?? [];
+};
+// ----------------- SERVICES PAR CLINIQUE -----------------
+export const getServicesByClinique = async (cliniqueId: number): Promise<any[]> => {
+  const res = await api.get(`/cliniques/${cliniqueId}/services`);
+  return res.data;
+};
+

@@ -12,6 +12,10 @@ type FieldDef = {
   label: string;
   placeholder?: string;
   type?: "text" | "number" | "textarea";
+  // optional numeric constraints for number fields
+  min?: number;
+  max?: number;
+  step?: number;
 };
 
 interface EntityModalProps {
@@ -38,7 +42,8 @@ export function EntityModal({
   const [form, setForm] = useState<Record<string, any>>(initialData ?? {});
 
   useEffect(() => {
-    setForm(initialData ?? {});
+    // clone to avoid accidental mutation of parent's object
+    setForm({ ...(initialData ?? {}) });
   }, [initialData, open]);
 
   const handleChange = (k: string, v: any) => {
@@ -46,8 +51,8 @@ export function EntityModal({
   };
 
   const handleSubmit = async () => {
+    // call parent's onSave and let parent decide when to close the modal
     await onSave(form);
-    onClose();
   };
 
   const h = React.createElement;
@@ -80,9 +85,28 @@ export function EntityModal({
                 })
               : h(Input, {
                   placeholder: f.placeholder,
-                  value: form[f.name] ?? "",
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                    handleChange(f.name, f.type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value),
+                  // for number fields we keep either "" or a number
+                  value:
+                    f.type === "number"
+                      ? (form[f.name] === undefined || form[f.name] === null ? "" : String(form[f.name]))
+                      : (form[f.name] ?? ""),
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                    if (f.type === "number") {
+                      const v = e.target.value;
+                      // keep empty string when user clears the input
+                      if (v === "") {
+                        handleChange(f.name, "");
+                      } else {
+                        // convert to number (could produce NaN if crazy input, parent should validate)
+                        const num = Number(v);
+                        handleChange(f.name, Number.isNaN(num) ? v : num);
+                      }
+                    } else {
+                      handleChange(f.name, e.target.value);
+                    }
+                  },
+                  // pass numeric attributes to the input when provided
+                  ...(f.type === "number" ? { type: "number", min: f.min, max: f.max, step: f.step ?? 1 } : { type: "text" }),
                 })
           )
         )
