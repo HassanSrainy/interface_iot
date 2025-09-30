@@ -10,7 +10,7 @@ class MesuresCapteurSeeder extends Seeder
 {
     public function run()
     {
-        $capteurId = 2; // id du capteur
+        $capteurId = 4; // id du capteur
         $startDate = Carbon::now()->subMonths(2); // il y a 2 mois
         $endDate = Carbon::now();
 

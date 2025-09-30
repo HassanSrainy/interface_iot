@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import {
   Select,
@@ -24,10 +23,10 @@ import {
   Search,
   Filter,
   WifiOff,
-  Zap,
+  AlertTriangle,
   ArrowUp,
   ArrowDown,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
   RefreshCw,
   X,
@@ -39,19 +38,19 @@ import { getAlertes, Alerte, RawStatut } from "./alertes-api";
 const isActiveStatus = (s: RawStatut) => s === "actif";
 const isInactiveStatus = (s: RawStatut) => s === "inactif";
 
-const isDeconnexion = (t: string) =>
-  t?.toLowerCase().includes("deconn") || t?.toLowerCase().includes("panne");
-const isHigh = (t: string) => {
-  const tl = t?.toLowerCase();
-  return tl?.includes("high") || tl?.includes("haut") || tl?.includes("max");
+const isDeconnexion = (t?: string) =>
+  !!t && (t.toLowerCase().includes("deconn") || t.toLowerCase().includes("panne"));
+const isHigh = (t?: string) => {
+  const tl = (t ?? "").toLowerCase();
+  return tl.includes("high") || tl.includes("haut") || tl.includes("max");
 };
-const isLow = (t: string) => {
-  const tl = t?.toLowerCase();
+const isLow = (t?: string) => {
+  const tl = (t ?? "").toLowerCase();
   return (
-    tl?.includes("low") ||
-    tl?.includes("bas") ||
-    tl?.includes("min") ||
-    tl?.includes("lower")
+    tl.includes("low") ||
+    tl.includes("bas") ||
+    tl.includes("min") ||
+    tl.includes("lower")
   );
 };
 
@@ -172,20 +171,59 @@ export function AlertesManagement() {
     }
   };
 
-  const statutBadge = (s: RawStatut) => {
+  /* ---------- Display helpers (no colored badges) ---------- */
+  const statutDisplay = (s: RawStatut) => {
     if (isActiveStatus(s))
-      return <Badge className="bg-yellow-100 text-yellow-800">Actif</Badge>;
+      return (
+        <span className="inline-flex items-center gap-2 text-sm">
+          <CheckCircle2 className="w-4 h-4 text-yellow-600" />
+          <span>Actif</span>
+        </span>
+      );
     if (isInactiveStatus(s))
-      return <Badge className="bg-green-100 text-green-800">Inactif</Badge>;
-    return <Badge>{s}</Badge>;
+      return (
+        <span className="inline-flex items-center gap-2 text-sm">
+          <XCircle className="w-4 h-4 text-green-600" />
+          <span>Inactif</span>
+        </span>
+      );
+    return (
+      <span className="inline-flex items-center gap-2 text-sm">
+        <AlertTriangle className="w-4 h-4 text-slate-500" />
+        <span>{s}</span>
+      </span>
+    );
   };
 
-  const typeBadge = (t: string) => {
+  const typeDisplay = (t?: string) => {
+    const text = t ?? "—";
     if (isDeconnexion(t))
-      return <Badge className="bg-red-100 text-red-700">{t}</Badge>;
-    if (isHigh(t)) return <Badge className="bg-orange-100 text-orange-700">{t}</Badge>;
-    if (isLow(t)) return <Badge className="bg-blue-100 text-blue-700">{t}</Badge>;
-    return <Badge>{t}</Badge>;
+      return (
+        <span className="inline-flex items-center gap-2 text-sm">
+          <WifiOff className="w-4 h-4 text-red-600" />
+          <span>{text}</span>
+        </span>
+      );
+    if (isHigh(t))
+      return (
+        <span className="inline-flex items-center gap-2 text-sm">
+          <ArrowUp className="w-4 h-4 text-orange-600" />
+          <span>{text}</span>
+        </span>
+      );
+    if (isLow(t))
+      return (
+        <span className="inline-flex items-center gap-2 text-sm">
+          <ArrowDown className="w-4 h-4 text-blue-600" />
+          <span>{text}</span>
+        </span>
+      );
+    return (
+      <span className="inline-flex items-center gap-2 text-sm">
+        <AlertTriangle className="w-4 h-4 text-slate-600" />
+        <span>{text}</span>
+      </span>
+    );
   };
 
   if (loading) return <p>Chargement des alertes...</p>;
@@ -218,7 +256,7 @@ export function AlertesManagement() {
       </div>
 
       {/* KPI grid (3 columns desktop) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-3 gap-4">
         {/* Total */}
         <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
           <div>
@@ -227,12 +265,18 @@ export function AlertesManagement() {
             <div className="text-xs text-muted-foreground mt-1">Historique complet</div>
           </div>
           <div className="flex flex-col items-center">
-            <div className="p-3 rounded-md bg-slate-50">
-              <Zap className="w-6 h-6 text-slate-700" />
+            <div className="p-3 rounded-md bg-red-50">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
             {/* mini proportion bar */}
             <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`, backgroundColor: '#F59E0B' }} />
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`,
+                  backgroundColor: "#F59E0B",
+                }}
+              />
             </div>
           </div>
         </div>
@@ -246,10 +290,16 @@ export function AlertesManagement() {
           </div>
           <div className="flex flex-col items-center">
             <div className="p-3 rounded-md bg-yellow-50">
-              <CheckCircle className="w-6 h-6 text-yellow-600" />
+              <CheckCircle2 className="w-6 h-6 text-yellow-600" />
             </div>
             <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`, backgroundColor: '#F59E0B' }} />
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`,
+                  backgroundColor: "#F59E0B",
+                }}
+              />
             </div>
           </div>
         </div>
@@ -266,7 +316,13 @@ export function AlertesManagement() {
               <XCircle className="w-6 h-6 text-green-600" />
             </div>
             <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div className="h-2 rounded-full" style={{ width: `${counts.total ? (counts.inactif / counts.total) * 100 : 0}%`, backgroundColor: '#10B981' }} />
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  width: `${counts.total ? (counts.inactif / counts.total) * 100 : 0}%`,
+                  backgroundColor: "#10B981",
+                }}
+              />
             </div>
           </div>
         </div>
@@ -363,56 +419,60 @@ export function AlertesManagement() {
       </div>
 
       {/* Filters row with improved search (clear button) */}
-      <Card>
-        <CardContent className="flex flex-col md:flex-row gap-4 items-center">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9 pr-10"
-              placeholder="Rechercher par matricule, type, valeur, id..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
-              <button
+      <div className="flex flex-col md:flex-row gap-4 items-center">
+    {/* 1. Champ de Recherche */}
+    <div className="flex-1 relative">
+        {/* L'icône de recherche est centrée verticalement */}
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          className="pl-9 pr-10"
+          placeholder="Rechercher par matricule, type, valeur, id..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        {searchTerm && (
+            <button
                 aria-label="Effacer"
                 onClick={() => setSearchTerm("")}
-                className="absolute right-3 top-2.5 p-1 rounded hover:bg-slate-100"
+                // Le bouton d'effacement est centré verticalement
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-slate-100"
                 title="Effacer"
-              >
+            >
                 <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            )}
-          </div>
+            </button>
+        )}
+    </div>
 
-          <div className="flex gap-2 items-center">
-            <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
-              <SelectTrigger className="w-40">
+    {/* 2. Conteneur des Filtres, aligné verticalement avec items-center */}
+    <div className="flex gap-2 items-center">
+        {/* Filtre de Statut */}
+        <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
+            <SelectTrigger className="w-40">
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue placeholder="Statut" />
-              </SelectTrigger>
-              <SelectContent>
+            </SelectTrigger>
+            <SelectContent>
                 <SelectItem value="all">Tous les statuts</SelectItem>
                 <SelectItem value="actif">Actif</SelectItem>
                 <SelectItem value="inactif">Inactif</SelectItem>
-              </SelectContent>
-            </Select>
+            </SelectContent>
+        </Select>
 
-            <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
-              <SelectTrigger className="w-48">
+        {/* Filtre de Type */}
+        <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
+            <SelectTrigger className="w-48">
                 <SelectValue placeholder="Type d'alerte" />
-              </SelectTrigger>
-              <SelectContent>
+            </SelectTrigger>
+            <SelectContent>
                 {types.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t === "all" ? "Tous les types" : t}
-                  </SelectItem>
+                    <SelectItem key={t} value={t}>
+                        {t === "all" ? "Tous les types" : t}
+                    </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+            </SelectContent>
+        </Select>
+    </div>
+</div>
 
       {/* Tabs + table */}
       <Tabs defaultValue="all" className="space-y-4">
@@ -431,15 +491,15 @@ export function AlertesManagement() {
 
             <div>
               <TabsContent value="all">
-                <AlertesTable alertes={filteredAlertes} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
+                <AlertesTable alertes={filteredAlertes} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
               </TabsContent>
 
               <TabsContent value="actif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
+                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
               </TabsContent>
 
               <TabsContent value="inactif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} formatDate={formatDate} statutBadge={statutBadge} typeBadge={typeBadge} />
+                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
               </TabsContent>
             </div>
           </CardContent>
@@ -450,8 +510,13 @@ export function AlertesManagement() {
 }
 
 /* ---------- Table component (no JSX typings) ---------- */
-function AlertesTable(props: { alertes: Alerte[]; formatDate: (s: string) => string; statutBadge: (s: RawStatut) => any; typeBadge: (t: string) => any; }) {
-  const { alertes, formatDate, statutBadge, typeBadge } = props;
+function AlertesTable(props: {
+  alertes: Alerte[];
+  formatDate: (s: string) => string;
+  statutDisplay: (s: RawStatut) => any;
+  typeDisplay: (t?: string) => any;
+}) {
+  const { alertes, formatDate, statutDisplay, typeDisplay } = props;
 
   return (
     <Card>
@@ -481,9 +546,9 @@ function AlertesTable(props: { alertes: Alerte[]; formatDate: (s: string) => str
                 <TableCell className="font-medium">
                   {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
                 </TableCell>
-                <TableCell>{typeBadge(a.type)}</TableCell>
+                <TableCell>{typeDisplay(a.type)}</TableCell>
                 <TableCell>{a.valeur ?? "—"}</TableCell>
-                <TableCell>{statutBadge(a.statut)}</TableCell>
+                <TableCell>{statutDisplay(a.statut)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {formatDate(a.date)}
                 </TableCell>

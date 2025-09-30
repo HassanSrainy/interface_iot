@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { Building, Activity, AlertTriangle } from "lucide-react";
+import { Building, Activity, AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "../ui/button";
 import { CapteurWithRelations, Alerte } from "../../types/domain";
 import { getServicesByClinique } from "../cliniques/cliniques-api";
 
@@ -15,11 +16,9 @@ type ServiceFromApi = {
   capteurs_count?: number;
   floor_id?: number | string;
   floor_nom?: string | null;
-  // autorise number ou null (ou undefined via le ?)
   floor_index?: number | null;
   floor_label?: string | null;
 };
-
 
 export type ClinicAgg = {
   id: string;
@@ -50,13 +49,15 @@ function groupServicesByFloor(services?: ServiceFromApi[]) {
   for (const s of services) {
     const idx = typeof s.floor_index === "number" ? s.floor_index : null;
     const key = idx !== null ? `i_${idx}` : String(s.floor_label ?? s.floor_nom ?? "no_floor");
-    const label = s.floor_label ?? s.floor_nom ?? (idx === 0 ? "Rez-de-chaussée" : idx !== null ? `${idx}ème étage` : "Étage inconnu");
+    const label =
+      s.floor_label ??
+      s.floor_nom ??
+      (idx === 0 ? "Rez-de-chaussée" : idx !== null ? `${idx}ème étage` : "Étage inconnu");
     if (!map.has(key)) map.set(key, { floorLabel: label, floorIndex: idx, services: [] });
     map.get(key)!.services.push(s);
   }
 
   const arr = Array.from(map.values());
-  // sort: numeric floorIndex first by index, then others alphabetically by label
   arr.sort((a, b) => {
     if (a.floorIndex == null && b.floorIndex == null) return a.floorLabel.localeCompare(b.floorLabel);
     if (a.floorIndex == null) return 1;
@@ -113,45 +114,77 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
 
   // Merge counts into clinic objects
   const cliniquesWithCounts = useMemo(
-    () => baseClinics.map(c => ({ ...c, alertesActives: countsByClinic.get(String(c.id)) ?? c.alertesActives ?? 0 })),
+    () =>
+      baseClinics.map((c) => ({
+        ...c,
+        alertesActives: countsByClinic.get(String(c.id)) ?? c.alertesActives ?? 0,
+      })),
     [baseClinics, countsByClinic]
   );
 
   // Local state that will contain clinics + services (we'll fetch missing services)
+  // IMPORTANT: we will ALWAYS reconcile clinicsWithServices with cliniquesWithCounts:
+  //   - add new clinics
+  //   - update counts/metadata for existing clinics
+  //   - remove deleted clinics
+  // while preserving any previously-loaded `services` arrays to avoid flicker.
   const [clinicsWithServices, setClinicsWithServices] = useState<ClinicAgg[]>(cliniquesWithCounts);
 
-  // When base clinics change, reset local state and fetch missing services
+  // loading flag for manual refresh of services
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Reconcile local clinics list with the incoming cliniquesWithCounts whenever it changes.
+  // Preserve existing services for clinics when possible to avoid UI flicker.
   useEffect(() => {
+    setClinicsWithServices((prev) => {
+      // Build a map of existing services by clinic id
+      const svcMap = new Map<string, ServiceFromApi[] | undefined>();
+      for (const p of prev) svcMap.set(String(p.id), p.services);
+
+      // Rebuild array from cliniquesWithCounts but attach preserved services if present
+      const next = cliniquesWithCounts.map((c) => ({
+        ...c,
+        services: svcMap.get(String(c.id)) ?? c.services,
+      }));
+
+      return next;
+    });
+
+    // Fetch missing services for clinics that don't have them yet (but don't wipe existing ones)
+    const toFetch = cliniquesWithCounts.filter((c) => !Array.isArray(c.services) || c.services.length === 0);
+
+    if (toFetch.length === 0) return;
+
     let mounted = true;
-    setClinicsWithServices(cliniquesWithCounts);
-
-    // Identify clinics that need services to be fetched (no services array present)
-    const toFetch = cliniquesWithCounts.filter(c => !Array.isArray(c.services) || c.services.length === 0);
-
-    if (toFetch.length === 0) return () => { mounted = false; };
-
-    // Fetch in parallel
     (async () => {
       try {
         const promises = toFetch.map(async (c) => {
-          const services = await getServicesByClinique(Number(c.id)); // API returns flat list
-          return { id: String(c.id), services };
+          try {
+            const services = await getServicesByClinique(Number(c.id));
+            return { id: String(c.id), services: services as ServiceFromApi[] };
+          } catch {
+            return { id: String(c.id), services: [] as ServiceFromApi[] };
+          }
         });
 
         const results = await Promise.all(promises);
 
         if (!mounted) return;
 
-        setClinicsWithServices(prev =>
-          prev.map(p => {
-            const found = results.find(r => String(r.id) === String(p.id));
+        setClinicsWithServices((prev) =>
+          prev.map((p) => {
+            const found = results.find((r) => String(r.id) === String(p.id));
             if (!found) return p;
-            return { ...p, services: found.services as ServiceFromApi[] };
+            // Only set services if previously missing or empty (prevent overwriting user-loaded services)
+            if (!p.services || p.services.length === 0) {
+              return { ...p, services: found.services };
+            }
+            return p;
           })
         );
       } catch (e) {
-        // ignore fetch errors for now (could add toast/log)
-        // console.error('Failed to fetch services for clinics', e);
+        // ignore for now (could log)
+        // console.error("Failed to fetch services", e);
       }
     })();
 
@@ -177,14 +210,16 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
         const g = (clinique.floors as any[]).map((f, idx) => ({
           floorLabel: f.nom ?? (idx === 0 ? "Rez-de-chaussée" : `${idx}ème étage`),
           floorIndex: typeof f.niveau === "number" ? f.niveau : idx,
-          services: Array.isArray(f.services) ? f.services.map((s: any) => ({
-            id: s.id,
-            nom: s.nom,
-            capteurs_count: s.capteurs ? s.capteurs.length : (s.capteurs_count ?? 0),
-            floor_index: typeof f.niveau === "number" ? f.niveau : idx,
-            floor_label: f.nom ?? (idx === 0 ? "Rez-de-chaussée" : `${idx}ème étage`),
-          })) : []
-        })).filter(x => x.services.length > 0);
+          services: Array.isArray(f.services)
+            ? f.services.map((s: any) => ({
+                id: s.id,
+                nom: s.nom,
+                capteurs_count: s.capteurs ? s.capteurs.length : s.capteurs_count ?? 0,
+                floor_index: typeof f.niveau === "number" ? f.niveau : idx,
+                floor_label: f.nom ?? (idx === 0 ? "Rez-de-chaussée" : `${idx}ème étage`),
+              }))
+            : [],
+        })).filter((x) => x.services.length > 0);
         return { clinic: clinique, groups: g };
       }
 
@@ -199,7 +234,7 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
         const key = idx !== null ? `i_${idx}` : label;
         if (!map[key]) map[key] = { floorLabel: label, floorIndex: idx, services: [] };
         const sid = svc.id ?? svc.nom ?? JSON.stringify(svc);
-        let existing = map[key].services.find(s => String(s.id) === String(sid));
+        let existing = map[key].services.find((s) => String(s.id) === String(sid));
         if (existing) existing.capteurs_count = (existing.capteurs_count ?? 0) + 1;
         else map[key].services.push({ id: sid, nom: svc.nom ?? svc.name ?? "Service", capteurs_count: 1, floor_index: idx, floor_label: label });
       }
@@ -207,9 +242,53 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
     });
   }, [cliniques]);
 
+  // Manual refresh: re-fetch services for all clinics (overwrites only if fetch returns)
+  const refreshServices = async () => {
+    setIsRefreshing(true);
+    try {
+      const promises = cliniques.map(async (c) => {
+        try {
+          const services = await getServicesByClinique(Number(c.id));
+          return { id: String(c.id), services: services as ServiceFromApi[] };
+        } catch {
+          return { id: String(c.id), services: c.services ?? [] as ServiceFromApi[] };
+        }
+      });
+
+      const results = await Promise.all(promises);
+
+      setClinicsWithServices((prev) =>
+        prev.map((p) => {
+          const found = results.find((r) => String(r.id) === String(p.id));
+          if (!found) return p;
+          return { ...p, services: found.services };
+        })
+      );
+    } catch (e) {
+      console.error("Erreur lors du refresh des services", e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // ---------- Rendu ----------
   return (
     <div className="space-y-6">
+      {/* top bar with Refresh button */}
+      <div className="flex items-center justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={refreshServices}
+          title="Rafraîchir"
+          aria-label="Rafraîchir les services des cliniques"
+          disabled={isRefreshing}
+          className="p-2"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
+
       {/* TOP SUMMARY */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>

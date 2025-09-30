@@ -5,13 +5,26 @@ import SensorCard, { Sensor } from "./sensor-card";
 import { AlertsPanel } from "./alerts-panel";
 import ClinicOverview from "./clinic-overview";
 import { getSensors, getSensorAlertCount } from "../sensors/sensor-api";
-import * as cliniquesApi from "../cliniques/cliniques-api"; // garde ce chemin si ton fichier est cliniques-clients (ajuste si nécessaire)
+import * as cliniquesApi from "../cliniques/cliniques-api";
 import { getAlertes } from "../alertes/alertes-api";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
+import {
+  Search,
+  Filter,
+  WifiOff,
+  AlertTriangle,
+  ArrowUp,
+  ArrowDown,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  X,
+} from "lucide-react";
+
 
 interface DashboardOverviewProps {
   sensors?: Sensor[];
-  alertes?: any[]; // si fourni par parent, on l'utilise, sinon on fetch local
+  alertes?: any[];
   onResolveAlert?: (alerteId: string) => void;
   onIgnoreAlert?: (alerteId: string) => void;
   onShowSensorEvolution?: (sensorId: string | number) => void;
@@ -37,25 +50,19 @@ export function DashboardOverview({
   const [clinicsLoading, setClinicsLoading] = useState<boolean>(false);
   const [clinicsData, setClinicsData] = useState<any[]>([]);
 
-  // --- NOUVEAU: états pour alertes ---
   const [fetchedAlertes, setFetchedAlertes] = useState<any[]>(Array.isArray(propsAlertes) ? propsAlertes : []);
   const [loadingAlertes, setLoadingAlertes] = useState<boolean>(false);
   const [alertesError, setAlertesError] = useState<string | null>(null);
 
-  // détection robuste si les capteurs contiennent la hiérarchie complète
   const isFullCapteurs = sensors.length > 0 && !!(sensors[0] as any)?.service?.floor?.clinique;
 
-  // Si le parent fournit alertes (propsAlertes non vide), on les utilise.
-  // Sinon on utilise fetchedAlertes (chargées depuis getAlertes).
   const alertes = propsAlertes && propsAlertes.length > 0 ? propsAlertes : fetchedAlertes;
 
-  // helper pour statut actif (inspiré de alertes-management)
   const isAlerteActive = (s: any) => {
     const statut = String((s?.statut ?? s?.status ?? "")).toLowerCase();
     return statut === "active" || statut === "actif";
   };
 
-  // fetch sensors (comme avant)
   const loadAll = useCallback(async () => {
     try {
       if (!propsSensors || propsSensors.length === 0) {
@@ -78,29 +85,19 @@ export function DashboardOverview({
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  /**
-   * loadClinicsHierarchy
-   * - récupère la structure clinique via cliniquesApi.getCliniques()
-   * - pour CHAQUE clinique appelle cliniquesApi.getCliniqueSummary(id) (optionnel)
-   * - pour CHAQUE clinique appelle cliniquesApi.getServicesByClinique(id) pour récupérer services avec capteurs_count
-   * - merge les compteurs summary.active_alertes & summary.total_alertes dans clinicsData
-   */
   const loadClinicsHierarchy = useCallback(async () => {
     setClinicsLoading(true);
     try {
-      // Si getCliniques est typé correctement, tu peux supprimer les cast "any"
       const raw: any = await (cliniquesApi as any).getCliniques();
       const cliniques = Array.isArray(raw) ? raw : (raw as any)?.data ?? [];
 
       const clinicsArr = await Promise.all(cliniques.map(async (clinique: any) => {
-        // capteurs depuis la hiérarchie (si fournie par /cliniques)
         const capteursFromHierarchy = (clinique.floors || []).flatMap((floor: any) =>
           (floor.services || []).flatMap((service: any) => service.capteurs || [])
         );
 
         const capteursEnLigne = capteursFromHierarchy.filter((c: any) => String(c?.status || "").toLowerCase() === "online").length;
 
-        // appel summary par clinique (GET /cliniques/{id}/summary) - optionnel
         let summary: any = null;
         try {
           if (typeof (cliniquesApi as any).getCliniqueSummary === "function") {
@@ -111,7 +108,6 @@ export function DashboardOverview({
           summary = null;
         }
 
-        // NOUVEAU: récupérer services via GET /cliniques/{id}/services
         let services: any[] = [];
         try {
           if (typeof (cliniquesApi as any).getServicesByClinique === "function") {
@@ -151,7 +147,6 @@ export function DashboardOverview({
     if (!isFullCapteurs) loadClinicsHierarchy();
   }, [isFullCapteurs, loadClinicsHierarchy]);
 
-  // fetch alertes (s'inspire de alertes-management)
   const fetchAlertes = useCallback(async () => {
     let mounted = true;
     try {
@@ -169,16 +164,13 @@ export function DashboardOverview({
   }, []);
 
   useEffect(() => {
-    // si parent n'a pas fourni d'alertes, on va les fetcher
     if (!propsAlertes || propsAlertes.length === 0) {
       fetchAlertes();
     } else {
-      // si propsAlertes fourni, synchroniser fetchedAlertes quand même pour usage interne
       setFetchedAlertes(propsAlertes);
     }
   }, [propsAlertes, fetchAlertes]);
 
-  // expose refresh pour réactualiser les alertes (optionnel)
   const refreshAlertes = async () => {
     try {
       setLoadingAlertes(true);
@@ -193,7 +185,6 @@ export function DashboardOverview({
     }
   };
 
-  // fetch alert counts per sensor (comme avant)
   useEffect(() => {
     if (!sensors || sensors.length === 0) return;
 
@@ -236,7 +227,6 @@ export function DashboardOverview({
     fetchCountsForAll();
   }, [sensors]);
 
-  // version compacte de filterMeasuresByPeriod (sans customRange)
   const filterMeasuresByPeriod = (sensor: Sensor | null | undefined) => {
     if (!sensor?.mesures || sensor.mesures.length === 0) return [];
     const now = new Date();
@@ -261,11 +251,19 @@ export function DashboardOverview({
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
-  // priorité : utiliser clinicsData si présent (fix race condition déjà gérée)
   const shouldUseClinicsData = clinicsData && clinicsData.length > 0;
-
-  // calculer nombre total d'alertes actives (statut=actif)
   const totalActiveAlerts = (alertes || []).filter(isAlerteActive).length;
+
+  /**
+   * NOTE: PERIODS is explicitly typed so TypeScript knows `key` is a PeriodOption.
+   * This avoids the "Argument of type 'string' is not assignable..." error.
+   */
+  const PERIODS: { key: PeriodOption; label: string }[] = [
+    { key: "1h", label: "1h" },
+    { key: "24h", label: "24h" },
+    { key: "7d", label: "7j" },
+    { key: "30d", label: "30j" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -282,62 +280,104 @@ export function DashboardOverview({
         </TabsList>
 
         <TabsContent value="evolution">
-          {selectedSensor ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <button onClick={() => setSelectedSensor(null)} className="text-sm underline">← Retour aux cartes</button>
-                <div className="flex space-x-2">
-                  <button onClick={() => setChartPeriod("1h")} className="btn">1h</button>
-                  <button onClick={() => setChartPeriod("24h")} className="btn">24h</button>
-                  <button onClick={() => setChartPeriod("7d")} className="btn">7j</button>
-                  <button onClick={() => setChartPeriod("30d")} className="btn">30j</button>
-                </div>
-              </div>
+  {selectedSensor ? (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => setSelectedSensor(null)}
+          className="text-sm underline"
+        >
+          ← Retour aux cartes
+        </button>
 
-              {/* SensorChart */}
-              <div>
-                <h4 className="text-lg font-semibold">Graphique — {selectedSensor?.matricule ?? `#${selectedSensor?.id}`}</h4>
-                <div className="mt-2">
-                  {filterMeasuresByPeriod(selectedSensor).length === 0 ? (
-                    <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={filterMeasuresByPeriod(selectedSensor)} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                        {selectedSensor?.seuil_max != null && <ReferenceLine y={selectedSensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />}
-                        {selectedSensor?.seuil_min != null && <ReferenceLine y={selectedSensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </div>
-            </div>
+        {/* Period buttons: use the typed PERIODS array */}
+        <div className="flex space-x-2">
+          {PERIODS.map(({ key, label }) => {
+            const active = chartPeriod === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setChartPeriod(key)}
+                aria-pressed={active}
+                className={
+                  `px-3 py-1 rounded-full transition-flex flex items-center justify-center text-sm ` +
+                  (active
+                    ? "border-2 border-black shadow-sm bg-white"
+                    : "border border-gray-300 bg-white hover:bg-gray-100")
+                }
+              >
+                <span className="text-sm">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SensorChart */}
+      <div>
+        <h4 className="text-lg font-semibold">
+          Graphique — {selectedSensor?.matricule ?? `#${selectedSensor?.id}`}
+        </h4>
+
+        <div className="mt-2">
+          {filterMeasuresByPeriod(selectedSensor).length === 0 ? (
+            <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {!loadingSensors && sensors.length === 0 && <div className="text-muted-foreground">Aucun capteur trouvé.</div>}
-
-              {sensors.map(sensor => (
-                <SensorCard
-                  key={String(sensor.id)}
-                  sensor={sensor}
-                  showFullHierarchy={isFullCapteurs}
-                  alertesCount={alertesActiveMap[Number(sensor.id)] ?? 0}
-                  totalAlertes={alertesTotalsMap[Number(sensor.id)] ?? 0}
-                  showEvolution
-                  onShowChart={id => {
-                    const s = sensors.find(x => String(x.id) === String(id)) || sensor;
-                    setSelectedSensor(s as Sensor);
-                    onShowSensorEvolution?.(id);
-                  }}
-                />
-              ))}
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart
+                data={filterMeasuresByPeriod(selectedSensor)}
+                margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                {selectedSensor?.seuil_max != null && (
+                  <ReferenceLine y={selectedSensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />
+                )}
+                {selectedSensor?.seuil_min != null && (
+                  <ReferenceLine y={selectedSensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
           )}
-        </TabsContent>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {loadingSensors ? (
+        <div className="col-span-full flex justify-center items-center py-8 text-muted-foreground">
+          Chargement des capteurs...
+        </div>
+      ) : sensors.length === 0 ? (
+        <div className="col-span-full flex justify-center py-8 text-muted-foreground">
+          Aucun capteur trouvé.
+        </div>
+      ) : (
+        sensors.map(sensor => (
+          <SensorCard
+            key={String(sensor.id)}
+            sensor={sensor}
+            showFullHierarchy={isFullCapteurs}
+            alertesCount={alertesActiveMap[Number(sensor.id)] ?? 0}
+            totalAlertes={alertesTotalsMap[Number(sensor.id)] ?? 0}
+            showEvolution
+            onShowChart={id => {
+              const s = sensors.find(x => String(x.id) === String(id)) || sensor;
+              setSelectedSensor(s as Sensor);
+              onShowSensorEvolution?.(id);
+            }}
+          />
+        ))
+      )}
+    </div>
+  )}
+</TabsContent>
+
 
         <TabsContent value="clinics">
           {clinicsLoading && !(clinicsData && clinicsData.length > 0) ? (
@@ -352,8 +392,7 @@ export function DashboardOverview({
         </TabsContent>
 
         <TabsContent value="alerts">
-          {/* AlertsPanel reçoit maintenant les alertes (fetchées ici si props absentes) */}
-          <AlertsPanel alertes={alertes} onResolveAlert={onResolveAlert} onIgnoreAlert={onIgnoreAlert} />
+          <AlertsPanel  />
         </TabsContent>
       </Tabs>
     </div>

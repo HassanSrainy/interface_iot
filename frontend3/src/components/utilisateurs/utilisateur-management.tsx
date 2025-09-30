@@ -1,4 +1,3 @@
-// frontend3/src/components/users/UserManagement.tsx
 import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -30,7 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../ui/alert-dialog";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2, RefreshCw } from "lucide-react";
 import type { AxiosError } from "axios";
 
 import {
@@ -64,6 +63,7 @@ export function UserManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<UserFormData>({
     name: "",
@@ -76,12 +76,14 @@ export function UserManagement() {
   /* ---------- Load users + cliniques ---------- */
   const loadUsers = async () => {
     setIsLoading(true);
+    setGlobalError(null);
     try {
       const data = await getUsers();
       setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("loadUsers error", err);
       setUsers([]);
+      setGlobalError("Erreur lors du chargement des utilisateurs.");
     } finally {
       setIsLoading(false);
     }
@@ -93,13 +95,33 @@ export function UserManagement() {
       setCliniques(data);
     } catch (err) {
       console.error("loadCliniques error", err);
+      // keep cliniques as-is but set a global error
+      setGlobalError((prev) => prev ?? "Erreur lors du chargement des cliniques.");
     }
   };
 
   useEffect(() => {
-    loadUsers();
-    loadCliniques();
+    // initial load
+    (async () => {
+      await Promise.all([loadUsers(), loadCliniques()]);
+    })();
   }, []);
+
+  // refresh all (users + cliniques)
+  const refreshAll = async () => {
+    setIsLoading(true);
+    setGlobalError(null);
+    try {
+      const [u, c] = await Promise.all([getUsers(), getCliniques()]);
+      setUsers(Array.isArray(u) ? u : []);
+      setCliniques(Array.isArray(c) ? c : []);
+    } catch (err) {
+      console.error("refreshAll error", err);
+      setGlobalError("Erreur lors du rafraîchissement.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   /* ---------- Validation ---------- */
   const validate = (): boolean => {
@@ -129,7 +151,7 @@ export function UserManagement() {
       email: user.email ?? "",
       password: "",
       role: (user.role as "admin" | "user") ?? "user",
-      clinique_ids: user.cliniques?.map(c => c.id) ?? [],
+      clinique_ids: user.cliniques?.map((c) => c.id) ?? [],
     });
     setErrors({});
     setFormError(null);
@@ -157,6 +179,7 @@ export function UserManagement() {
     };
 
     setIsSaving(true);
+    setFormError(null);
     try {
       if (selectedUser) {
         await updateUser(selectedUser.id, payload);
@@ -178,12 +201,13 @@ export function UserManagement() {
   /* ---------- Delete ---------- */
   const handleDelete = async (id: number) => {
     const old = users;
-    setUsers(prev => prev.filter(u => u.id !== id));
+    setUsers((prev) => prev.filter((u) => u.id !== id));
     try {
       await deleteUser(id);
     } catch (err) {
       console.error("delete error", err);
       setUsers(old); // rollback
+      setGlobalError("Erreur lors de la suppression.");
     }
   };
 
@@ -192,102 +216,118 @@ export function UserManagement() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold">Gestion des Utilisateurs</h1>
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreateDialog}>
-              <Plus className="w-4 h-4 mr-2" /> Nouvel utilisateur
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refreshAll()}
+            title="Rafraîchir"
+            aria-label="Rafraîchir les utilisateurs"
+            disabled={isLoading || isSaving}
+            className="p-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+          </Button>
 
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{selectedUser ? "Modifier Utilisateur" : "Ajouter Utilisateur"}</DialogTitle>
-              <DialogDescription>
-                {selectedUser ? "Modifiez les infos et les cliniques assignées." : "Créez un utilisateur et assignez ses cliniques."}
-              </DialogDescription>
-            </DialogHeader>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openCreateDialog} disabled={isLoading || isSaving}>
+                <Plus className="w-4 h-4 mr-2" /> Nouvel utilisateur
+              </Button>
+            </DialogTrigger>
 
-            <div className="grid grid-cols-1 gap-4 mt-4">
-              {/* Nom */}
-              <div>
-                <Label>Nom</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
-                {errors.name && <p className="text-xs text-red-600">{errors.name[0]}</p>}
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{selectedUser ? "Modifier Utilisateur" : "Ajouter Utilisateur"}</DialogTitle>
+                <DialogDescription>
+                  {selectedUser ? "Modifiez les infos et les cliniques assignées." : "Créez un utilisateur et assignez ses cliniques."}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 gap-4 mt-4">
+                {/* Nom */}
+                <div>
+                  <Label>Nom</Label>
+                  <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                  {errors.name && <p className="text-xs text-red-600">{errors.name[0]}</p>}
+                </div>
+
+                {/* Email */}
+                <div>
+                  <Label>Email</Label>
+                  <Input value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                  {errors.email && <p className="text-xs text-red-600">{errors.email[0]}</p>}
+                </div>
+
+                {/* Mot de passe */}
+                <div>
+                  <Label>Mot de passe {selectedUser ? "(laisser vide)" : ""}</Label>
+                  <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
+                  {errors.password && <p className="text-xs text-red-600">{errors.password[0]}</p>}
+                </div>
+
+                {/* Rôle */}
+                <div>
+                  <Label>Rôle</Label>
+                  <select
+                    className="input w-full border rounded p-2"
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as "admin" | "user" })}
+                  >
+                    <option value="user">user</option>
+                    <option value="admin">admin</option>
+                  </select>
+                  {errors.role && <p className="text-xs text-red-600">{errors.role[0]}</p>}
+                </div>
+
+                {/* Cliniques */}
+                <div>
+                  <Label>Cliniques</Label>
+                  <div className="space-y-2 mt-2">
+                    {cliniques.map((c) => {
+                      const checked = formData.clinique_ids.includes(c.id);
+                      return (
+                        <label key={c.id} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setFormData((prev) => {
+                                const ids = checked
+                                  ? prev.clinique_ids.filter((id) => id !== c.id) // remove
+                                  : [...prev.clinique_ids, c.id]; // add
+                                return { ...prev, clinique_ids: ids };
+                              });
+                            }}
+                          />
+                          <span>{c.nom}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {formError && <div className="text-sm text-red-600">{formError}</div>}
+
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={closeDialog} disabled={isSaving}>Annuler</Button>
+                  <Button onClick={handleSubmit} disabled={isSaving}>
+                    {isSaving ? "Enregistrement..." : selectedUser ? "Modifier" : "Créer"}
+                  </Button>
+                </div>
               </div>
-
-              {/* Email */}
-              <div>
-                <Label>Email</Label>
-                <Input value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                {errors.email && <p className="text-xs text-red-600">{errors.email[0]}</p>}
-              </div>
-
-              {/* Mot de passe */}
-              <div>
-                <Label>Mot de passe {selectedUser ? "(laisser vide)" : ""}</Label>
-                <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
-                {errors.password && <p className="text-xs text-red-600">{errors.password[0]}</p>}
-              </div>
-
-              {/* Rôle */}
-              <div>
-                <Label>Rôle</Label>
-                <select
-                  className="input w-full border rounded p-2"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as "admin" | "user" })}
-                >
-                  <option value="user">user</option>
-                  <option value="admin">admin</option>
-                </select>
-                {errors.role && <p className="text-xs text-red-600">{errors.role[0]}</p>}
-              </div>
-
-              {/* Cliniques */}
-             {/* Cliniques */}
-<div>
-  <Label>Cliniques</Label>
-  <div className="space-y-2 mt-2">
-    {cliniques.map(c => {
-      const checked = formData.clinique_ids.includes(c.id);
-      return (
-        <label key={c.id} className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={() => {
-              setFormData(prev => {
-                const ids = checked
-                  ? prev.clinique_ids.filter(id => id !== c.id) // remove
-                  : [...prev.clinique_ids, c.id];              // add
-                return { ...prev, clinique_ids: ids };
-              });
-            }}
-          />
-          <span>{c.nom}</span>
-        </label>
-      );
-    })}
-  </div>
-</div>
-
-
-              {formError && <div className="text-sm text-red-600">{formError}</div>}
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={closeDialog}>Annuler</Button>
-                <Button onClick={handleSubmit} disabled={isSaving}>
-                  {isSaving ? "Enregistrement..." : (selectedUser ? "Modifier" : "Créer")}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+
+      {globalError && <div className="text-sm text-red-600" role="status" aria-live="polite">{globalError}</div>}
 
       {/* Table */}
       <Card>
-        <CardHeader><CardTitle>Liste des utilisateurs</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Liste des utilisateurs</CardTitle>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -301,23 +341,27 @@ export function UserManagement() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5}>Chargement...</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={5}>Chargement...</TableCell>
+                </TableRow>
               ) : users.length === 0 ? (
-                <TableRow><TableCell colSpan={5}>Aucun utilisateur.</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={5}>Aucun utilisateur.</TableCell>
+                </TableRow>
               ) : (
                 users.map((u) => (
                   <TableRow key={u.id}>
                     <TableCell>{u.name}</TableCell>
                     <TableCell>{u.email}</TableCell>
                     <TableCell>{u.role}</TableCell>
-                    <TableCell>{u.cliniques?.map(c => c.nom).join(", ") || "—"}</TableCell>
+                    <TableCell>{u.cliniques?.map((c) => c.nom).join(", ") || "—"}</TableCell>
                     <TableCell className="flex space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => openEditDialog(u)}>
+                      <Button size="sm" variant="outline" onClick={() => openEditDialog(u)} disabled={isLoading || isSaving}>
                         <Edit className="w-4 h-4" />
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline"><Trash2 className="w-4 h-4" /></Button>
+                          <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-4 h-4" /></Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
@@ -340,3 +384,5 @@ export function UserManagement() {
     </div>
   );
 }
+
+export default UserManagement;

@@ -1,4 +1,3 @@
-// frontend3/src/components/sensors/SensorManagement.tsx
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -16,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '../ui/alert-dialog';
-import { Plus, Edit, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { Plus, Edit, Trash2, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import type { AxiosError } from 'axios';
 
 // ---- imports API (tes helpers existants) ----
@@ -47,13 +46,11 @@ export interface Sensor {
   service?: Service | null;
   mesures?: Mesure[];
   alertes?: Alerte[];
-  // dernière mesure fournie par l'API (basée sur date_mesure)
   derniere_mesure?: {
     id?: number;
     valeur: number;
     date_mesure: string;
   } | null;
-  // status lu directement depuis la table ('online' | 'offline')
   status?: 'online' | 'offline' | null;
 }
 
@@ -61,11 +58,9 @@ export interface Sensor {
 type ValidationErrors = Record<string, string[]>;
 
 interface SensorManagementProps {
-  // optionally parent may pass cliniques; if not, component loads them
   cliniques?: Clinique[];
 }
 
-/* ---------- Form data type (typed to avoid implicit any) ---------- */
 interface SensorFormData {
   matricule: string;
   seuil_min: number | '';
@@ -79,7 +74,6 @@ interface SensorFormData {
   date_installation: string | null;
 }
 
-/* ---------- Helper to normalize axios-like responses ---------- */
 const normalizeAxiosData = (data: any): any[] => {
   if (!data) return [];
   if (Array.isArray(data)) return data;
@@ -92,7 +86,6 @@ const normalizeAxiosData = (data: any): any[] => {
   return [];
 };
 
-/* ---------- Component ---------- */
 export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -118,18 +111,21 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
   const [familles, setFamilles] = useState<Famille[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [servicesOptions, setServicesOptions] = useState<Service[]>([]);
-  // local cliniques fallback (we always load from API into this)
   const [localCliniques, setLocalCliniques] = useState<Clinique[]>([]);
+
+  // loading / saving / global error
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   /* ---------- Load initial data ---------- */
   useEffect(() => {
-    loadSensors();
-    loadFamilles();
-    // we load cliniques when dialog opens (see useEffect below)
+    (async () => {
+      await Promise.all([loadSensors(), loadFamilles()]);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // reload cliniques / familles each time dialog opens (fresh data)
   useEffect(() => {
     if (isAddOpen) {
       loadCliniques();
@@ -139,12 +135,18 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
   }, [isAddOpen]);
 
   const loadSensors = async () => {
+    setIsLoading(true);
+    setGlobalError(null);
     try {
       const data = await getSensors();
-      setSensors(normalizeAxiosData(data));
+      const arr = normalizeAxiosData(data);
+      setSensors(arr);
     } catch (err) {
       console.error('Erreur loadSensors', err);
       setSensors([]);
+      setGlobalError('Impossible de charger les capteurs.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -157,10 +159,10 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     } catch (err) {
       console.error('Impossible de charger familles', err);
       setFamilles([]);
+      setGlobalError((prev) => prev ?? 'Erreur lors du chargement des familles.');
     }
   };
 
-  // now using getCliniques helper directly
   const loadCliniques = async () => {
     try {
       const resp = await getCliniques();
@@ -170,10 +172,10 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     } catch (err) {
       console.error('Impossible de charger cliniques', err);
       setLocalCliniques([]);
+      setGlobalError((prev) => prev ?? 'Erreur lors du chargement des cliniques.');
     }
   };
 
-  /* ---------- Floors and Services with fallback strategies (use your helpers) ---------- */
   const loadFloorsForClinique = async (cliniqueId: number | string) => {
     if (!cliniqueId) {
       setFloors([]);
@@ -181,7 +183,6 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
       return;
     }
 
-    // preferred: dedicated endpoint helper getFloorsByClinique
     if (typeof getFloorsByClinique === 'function') {
       try {
         const resp = await getFloorsByClinique(Number(cliniqueId));
@@ -194,7 +195,6 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
       }
     }
 
-    // fallback: getFloors then filter
     if (typeof getFloors === 'function') {
       try {
         const resp = await getFloors();
@@ -245,7 +245,28 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     setServicesOptions([]);
   };
 
-  /* ---------- Client validation ---------- */
+  const refreshAll = async () => {
+    setIsLoading(true);
+    setGlobalError(null);
+    try {
+      // clear local caches so select lists will be rebuilt
+      setFamilles([]);
+      setLocalCliniques([]);
+      setFloors([]);
+      setServicesOptions([]);
+
+      const [sResp, fResp, cResp] = await Promise.all([getSensors(), getFamilies(), getCliniques()]);
+      setSensors(normalizeAxiosData(sResp));
+      setFamilles(normalizeAxiosData(fResp));
+      setLocalCliniques(normalizeAxiosData(cResp));
+    } catch (err) {
+      console.error('refreshAll error', err);
+      setGlobalError('Erreur lors du rafraîchissement.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const validateClient = (): boolean => {
     const v: ValidationErrors = {};
     if (!formData.matricule || String(formData.matricule).trim() === '') v.matricule = ['Le matricule est requis.'];
@@ -263,11 +284,10 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     return Object.keys(v).length === 0;
   };
 
-  /* ---------- Submit ---------- */
   const handleSubmit = async () => {
     setFormError(null);
     setErrors({});
-    if (!validateClient()) return;
+    if (!validateClient() || isSaving) return;
 
     const payload = {
       matricule: formData.matricule,
@@ -280,6 +300,7 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
       date_installation: formData.date_installation || null
     };
 
+    setIsSaving(true);
     try {
       if (editingSensor) {
         await updateSensor(editingSensor.id, payload);
@@ -298,9 +319,12 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
           resp.data?.errors ?? (typeof resp.data === 'object' ? resp.data : {});
         setErrors(validationErrors);
         if (resp.data?.message) setFormError(String(resp.data.message));
+        setIsSaving(false);
         return;
       }
       setFormError('Erreur lors de la sauvegarde. Voir console.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -310,12 +334,11 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
       setSensors(prev => prev.filter(s => s.id !== id));
     } catch (err) {
       console.error('Erreur suppression', err);
+      setGlobalError('Erreur lors de la suppression du capteur.');
     }
   };
 
-  /* ---------- Edit / Reset ---------- */
   const handleEdit = (sensor: Sensor) => {
-    // robust fallback to get clinique id from various possible shapes
     const cliniqueIdFromSensor =
       (sensor as any).clinique_id ??
       sensor.service?.floor?.clinique?.id ??
@@ -334,7 +357,6 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
       date_installation: sensor.date_installation ?? null
     });
 
-    // preload dependent selects
     if (cliniqueIdFromSensor) loadFloorsForClinique(cliniqueIdFromSensor);
     if (sensor.service?.floor?.id) loadServicesForFloor(sensor.service.floor.id);
 
@@ -364,24 +386,19 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     setServicesOptions([]);
   };
 
-  /* ---------- Status icon (USE DB STATUS only) ---------- */
   const getStatusIcon = (sensor: Sensor) => {
-    // Use status coming from the server (database). Only two visual states:
-    // 'online' => green Wifi, otherwise => red WifiOff
     if (sensor.status === 'online') return <Wifi className="w-4 h-4 text-green-500" />;
     return <WifiOff className="w-4 h-4 text-red-500" />;
   };
 
-  /* ---------- UI ---------- */
-  // Force use of cliniques loaded from API to avoid stale prop
   const clinicsToRender = localCliniques;
 
   function timeAgo(dateString: string) {
     if (!dateString) return '';
 
-    const date = new Date(dateString.replace(' ', 'T')); // transforme "YYYY-MM-DD HH:MM:SS" en ISO
+    const date = new Date(dateString.replace(' ', 'T'));
     const now = new Date();
-    const diff = now.getTime() - date.getTime(); // différence en ms
+    const diff = now.getTime() - date.getTime();
 
     const seconds = Math.floor(diff / 1000);
     if (seconds < 60) return `il y a ${seconds} seconde${seconds > 1 ? 's' : ''}`;
@@ -403,121 +420,137 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
           <h1 className="text-2xl font-semibold">Gestion des Capteurs</h1>
           <p className="text-muted-foreground">Gérez vos capteurs IoT et leurs mesures</p>
         </div>
-        
 
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => { resetForm(); setIsAddOpen(true); }} className="flex items-center">
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau Capteur
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refreshAll()}
+            title="Rafraîchir"
+            aria-label="Rafraîchir les capteurs"
+            disabled={isLoading || isSaving}
+            className="p-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
 
-          <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto" aria-describedby="capteur-form-description">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-medium">{editingSensor ? 'Modifier Capteur' : 'Ajouter Capteur'}</DialogTitle>
-              <DialogDescription id="capteur-form-description" className="text-sm text-muted-foreground">
-                Remplissez les champs du formulaire pour {editingSensor ? 'modifier' : 'ajouter'} un capteur.
-              </DialogDescription>
-            </DialogHeader>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => { resetForm(); setIsAddOpen(true); }} className="flex items-center" disabled={isLoading || isSaving}>
+                <Plus className="w-4 h-4 mr-2" />
+                Nouveau Capteur
+              </Button>
+            </DialogTrigger>
 
-            <div className="grid grid-cols-2 gap-4 mt-2">
-              <div className="space-y-1">
-                <Label htmlFor="matricule">Matricule</Label>
-                <Input id="matricule" value={formData.matricule} onChange={e => setFormData({ ...formData, matricule: e.target.value })} />
-                {errors.matricule && <p className="text-xs text-red-600 mt-1">{errors.matricule[0]}</p>}
-              </div>
+            <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto" aria-describedby="capteur-form-description">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-medium">{editingSensor ? 'Modifier Capteur' : 'Ajouter Capteur'}</DialogTitle>
+                <DialogDescription id="capteur-form-description" className="text-sm text-muted-foreground">
+                  Remplissez les champs du formulaire pour {editingSensor ? 'modifier' : 'ajouter'} un capteur.
+                </DialogDescription>
+              </DialogHeader>
 
-              <div className="space-y-1">
-                <Label htmlFor="famille">Famille</Label>
-                <select id="famille" className="input w-full" value={formData.famille_id ?? ''} onChange={e => setFormData({ ...formData, famille_id: e.target.value === '' ? '' : Number(e.target.value) })}>
-                  <option value="">-- Choisir une famille --</option>
-                  {familles.map(f => <option key={f.id} value={f.id}>{f.famille}{f.type ? ` (${f.type.type})` : ''}</option>)}
-                </select>
-                {errors.famille_id && <p className="text-xs text-red-600 mt-1">{errors.famille_id[0]}</p>}
-              </div>
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                {/* form fields... (unchanged) */}
+                <div className="space-y-1">
+                  <Label htmlFor="matricule">Matricule</Label>
+                  <Input id="matricule" value={formData.matricule} onChange={e => setFormData({ ...formData, matricule: e.target.value })} />
+                  {errors.matricule && <p className="text-xs text-red-600 mt-1">{errors.matricule[0]}</p>}
+                </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="clinique">Clinique</Label>
-                <select
-                  id="clinique"
-                  className="input w-full"
-                  value={formData.clinique_id ?? ''}
-                  onChange={e => {
+                <div className="space-y-1">
+                  <Label htmlFor="famille">Famille</Label>
+                  <select id="famille" className="input w-full" value={formData.famille_id ?? ''} onChange={e => setFormData({ ...formData, famille_id: e.target.value === '' ? '' : Number(e.target.value) })}>
+                    <option value="">-- Choisir une famille --</option>
+                    {familles.map(f => <option key={f.id} value={f.id}>{f.famille}{f.type ? ` (${f.type.type})` : ''}</option>)}
+                  </select>
+                  {errors.famille_id && <p className="text-xs text-red-600 mt-1">{errors.famille_id[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="clinique">Clinique</Label>
+                  <select
+                    id="clinique"
+                    className="input w-full"
+                    value={formData.clinique_id ?? ''}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      const val = raw === '' ? '' : Number(raw);
+                      setFormData(prev => ({ ...prev, clinique_id: val, floor_id: '', service_id: '' }));
+                      if (val !== '') loadFloorsForClinique(val);
+                      else {
+                        setFloors([]);
+                        setServicesOptions([]);
+                      }
+                    }}
+                  >
+                    <option value="">-- Choisir une clinique --</option>
+                    {clinicsToRender.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                  </select>
+                  {errors.clinique_id && <p className="text-xs text-red-600 mt-1">{errors.clinique_id[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="floor">Étage (Floor)</Label>
+                  <select id="floor" className="input w-full" value={formData.floor_id ?? ''} onChange={e => {
                     const raw = e.target.value;
                     const val = raw === '' ? '' : Number(raw);
-                    setFormData(prev => ({ ...prev, clinique_id: val, floor_id: '', service_id: '' }));
-                    if (val !== '') loadFloorsForClinique(val);
-                    else {
-                      setFloors([]);
-                      setServicesOptions([]);
-                    }
-                  }}
-                >
-                  <option value="">-- Choisir une clinique --</option>
-                  {clinicsToRender.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                </select>
-                {errors.clinique_id && <p className="text-xs text-red-600 mt-1">{errors.clinique_id[0]}</p>}
+                    setFormData({ ...formData, floor_id: val, service_id: '' });
+                    if (val !== '') loadServicesForFloor(val);
+                    else setServicesOptions([]);
+                  }}>
+                    <option value="">-- Choisir un étage --</option>
+                    {floors.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+                  </select>
+                  {errors.floor_id && <p className="text-xs text-red-600 mt-1">{errors.floor_id[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="service">Service</Label>
+                  <select id="service" className="input w-full" value={formData.service_id ?? ''} onChange={e => setFormData({ ...formData, service_id: e.target.value === '' ? '' : Number(e.target.value) })}>
+                    <option value="">-- Choisir un service --</option>
+                    {servicesOptions.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                  {errors.service_id && <p className="text-xs text-red-600 mt-1">{errors.service_id[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="adresse_ip">Adresse IP</Label>
+                  <Input id="adresse_ip" placeholder="192.168.1.100" value={formData.adresse_ip} onChange={e => setFormData({ ...formData, adresse_ip: e.target.value })} />
+                  {errors.adresse_ip && <p className="text-xs text-red-600 mt-1">{errors.adresse_ip[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="adresse_mac">Adresse MAC</Label>
+                  <Input id="adresse_mac" placeholder="00:1A:2B:3C:4D:5E" value={formData.adresse_mac} onChange={e => setFormData({ ...formData, adresse_mac: e.target.value })} />
+                  {errors.adresse_mac && <p className="text-xs text-red-600 mt-1">{errors.adresse_mac[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="seuil_min">Seuil min</Label>
+                  <Input id="seuil_min" type="number" value={formData.seuil_min} onChange={e => setFormData({ ...formData, seuil_min: e.target.value === '' ? '' : Number(e.target.value) })} />
+                  {errors.seuil_min && <p className="text-xs text-red-600 mt-1">{errors.seuil_min[0]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="seuil_max">Seuil max</Label>
+                  <Input id="seuil_max" type="number" value={formData.seuil_max} onChange={e => setFormData({ ...formData, seuil_max: e.target.value === '' ? '' : Number(e.target.value) })} />
+                  {errors.seuil_max && <p className="text-xs text-red-600 mt-1">{errors.seuil_max[0]}</p>}
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="floor">Étage (Floor)</Label>
-                <select id="floor" className="input w-full" value={formData.floor_id ?? ''} onChange={e => {
-                  const raw = e.target.value;
-                  const val = raw === '' ? '' : Number(raw);
-                  setFormData({ ...formData, floor_id: val, service_id: '' });
-                  if (val !== '') loadServicesForFloor(val);
-                  else setServicesOptions([]);
-                }}>
-                  <option value="">-- Choisir un étage --</option>
-                  {floors.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
-                </select>
-                {errors.floor_id && <p className="text-xs text-red-600 mt-1">{errors.floor_id[0]}</p>}
+              {formError && <div className="mt-3 text-sm text-red-600">{formError}</div>}
+
+              <div className="flex justify-end mt-4 space-x-2">
+                <Button variant="outline" onClick={() => { setIsAddOpen(false); resetForm(); }} disabled={isSaving}>Annuler</Button>
+                <Button onClick={handleSubmit} disabled={isSaving}>{isSaving ? 'Enregistrement...' : (editingSensor ? 'Modifier' : 'Ajouter')}</Button>
               </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="service">Service</Label>
-                <select id="service" className="input w-full" value={formData.service_id ?? ''} onChange={e => setFormData({ ...formData, service_id: e.target.value === '' ? '' : Number(e.target.value) })}>
-                  <option value="">-- Choisir un service --</option>
-                  {servicesOptions.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                </select>
-                {errors.service_id && <p className="text-xs text-red-600 mt-1">{errors.service_id[0]}</p>}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="adresse_ip">Adresse IP</Label>
-                <Input id="adresse_ip" placeholder="192.168.1.100" value={formData.adresse_ip} onChange={e => setFormData({ ...formData, adresse_ip: e.target.value })} />
-                {errors.adresse_ip && <p className="text-xs text-red-600 mt-1">{errors.adresse_ip[0]}</p>}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="adresse_mac">Adresse MAC</Label>
-                <Input id="adresse_mac" placeholder="00:1A:2B:3C:4D:5E" value={formData.adresse_mac} onChange={e => setFormData({ ...formData, adresse_mac: e.target.value })} />
-                {errors.adresse_mac && <p className="text-xs text-red-600 mt-1">{errors.adresse_mac[0]}</p>}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="seuil_min">Seuil min</Label>
-                <Input id="seuil_min" type="number" value={formData.seuil_min} onChange={e => setFormData({ ...formData, seuil_min: e.target.value === '' ? '' : Number(e.target.value) })} />
-                {errors.seuil_min && <p className="text-xs text-red-600 mt-1">{errors.seuil_min[0]}</p>}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="seuil_max">Seuil max</Label>
-                <Input id="seuil_max" type="number" value={formData.seuil_max} onChange={e => setFormData({ ...formData, seuil_max: e.target.value === '' ? '' : Number(e.target.value) })} />
-                {errors.seuil_max && <p className="text-xs text-red-600 mt-1">{errors.seuil_max[0]}</p>}
-              </div>
-            </div>
-
-            {formError && <div className="mt-3 text-sm text-red-600">{formError}</div>}
-
-            <div className="flex justify-end mt-4 space-x-2">
-              <Button variant="outline" onClick={() => { setIsAddOpen(false); resetForm(); }}>Annuler</Button>
-              <Button onClick={handleSubmit}>{editingSensor ? 'Modifier' : 'Ajouter'}</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+
+      {globalError && <div className="text-sm text-red-600" role="status" aria-live="polite">{globalError}</div>}
 
       <Card>
         <CardHeader>
@@ -572,7 +605,6 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
                     <div className="flex items-center space-x-2">{getStatusIcon(sensor)}</div>
                   </TableCell>
 
-                  {/* Nouvelle colonne : Dernière Mesure */}
                   <TableCell className="text-xs">
                     {sensor.derniere_mesure ? (
                       <div className="flex flex-col">
@@ -587,13 +619,13 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
                   </TableCell>
 
                   <TableCell className="flex space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => handleEdit(sensor)}>
+                    <Button size="sm" variant="outline" onClick={() => handleEdit(sensor)} disabled={isLoading || isSaving}>
                       <Edit className="w-3 h-3" />
                     </Button>
 
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="outline"><Trash2 className="w-3 h-3" /></Button>
+                        <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-3 h-3" /></Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -615,3 +647,5 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
     </div>
   );
 }
+
+export default SensorManagement;

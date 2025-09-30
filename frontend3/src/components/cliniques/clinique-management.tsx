@@ -1,4 +1,3 @@
-// frontend3/src/components/cliniques/clinique-management.tsx
 import React, { useEffect, useState } from "react";
 import * as cliniquesApi from "./cliniques-api";
 import * as floorsApi from "../floors/floors-api";
@@ -20,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from "../ui/alert-dialog";
-import { Trash2, Edit, Plus, ChevronDown, ChevronRight, Wifi, WifiOff } from "lucide-react";
+import { Trash2, Edit, Plus, ChevronDown, ChevronRight, Wifi, WifiOff, RefreshCw } from "lucide-react";
 
 /* Types (keep optional fields for safety) */
 type Clinique = cliniquesApi.Clinique;
@@ -55,6 +54,10 @@ export function CliniqueManagement(): React.ReactElement {
   const [modalParentId, setModalParentId] = useState<number | null>(null);
   const [modalInitial, setModalInitial] = useState<Record<string, any>>({});
 
+  // refresh / loading / error
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => {
       await reloadCliniques();
@@ -62,8 +65,36 @@ export function CliniqueManagement(): React.ReactElement {
   }, []);
 
   const reloadCliniques = async () => {
-    const data = await cliniquesApi.getCliniques();
-    setCliniques(data);
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await cliniquesApi.getCliniques();
+      setCliniques(data);
+    } catch (err: any) {
+      console.error("Erreur chargement cliniques:", err);
+      setError(err?.message ?? "Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // refreshAll: option to clear caches and reload everything
+  const refreshAll = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // clear caches so lazy loaders will refetch
+      setFloorsMap({});
+      setServicesMap({});
+      setCapteursMap({});
+      const data = await cliniquesApi.getCliniques();
+      setCliniques(data);
+    } catch (err: any) {
+      console.error("Erreur refresh:", err);
+      setError(err?.message ?? "Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleSet = (setRef: Set<number>, setter: (s: Set<number>) => void, id: number) => {
@@ -283,10 +314,28 @@ export function CliniqueManagement(): React.ReactElement {
 
   // main render tree
   return h("div", { className: "space-y-6 p-6" },
+    // header with refresh
     h("div", { className: "flex items-center justify-between" },
       h("h1", { className: "text-2xl font-semibold" }, "Gestion des Cliniques"),
-      h(Button, { onClick: () => openCreateModal("clinique") }, h(Plus, { className: "w-4 h-4 mr-2" }), "Nouvelle Clinique")
+      h("div", { className: "flex items-center gap-3" },
+        // bouton Refresh (icône-only)
+        h(Button, {
+          variant: "ghost",
+          size: "sm",
+          onClick: () => refreshAll(),
+          title: "Rafraîchir",
+          "aria-label": "Rafraîchir les cliniques",
+          disabled: loading,
+          className: "p-2"
+        }, h(RefreshCw, { className: `w-4 h-4 ${loading ? "animate-spin" : ""}` })),
+
+        // bouton création
+        h(Button, { onClick: () => openCreateModal("clinique"), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-2" }), "Nouvelle Clinique")
+      )
     ),
+
+    // error message (accessible)
+    error && h("div", { className: "text-sm text-red-600", role: "status", "aria-live": "polite" }, error),
 
     // clinics
     ...cliniques.map((c) => h(Card, { key: c.id, className: "bg-white shadow-md" },
@@ -303,12 +352,12 @@ export function CliniqueManagement(): React.ReactElement {
             )
           ),
           h("div", { className: "flex gap-2" },
-            h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("clinique", c); } }, h(Edit, { className: "w-4 h-4" })),
+            h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("clinique", c); }, disabled: loading }, h(Edit, { className: "w-4 h-4" })),
 
             // AlertDialog for delete clinique
             h(AlertDialog, {},
               h(AlertDialogTrigger, { asChild: true },
-                h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation() }, h(Trash2, { className: "w-4 h-4" }))
+                h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
               ),
               h(AlertDialogContent, null,
                 h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer la clinique")),
@@ -340,8 +389,8 @@ export function CliniqueManagement(): React.ReactElement {
             step: 1,
             min: -5
           }),
-          h(Button, { size: "sm", onClick: () => handleAddFloorQuick(c.id) }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter étage"),
-          h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("floor", c.id) }, h(Edit, { className: "w-4 h-4 mr-1" }), "Ajouter (modal)")
+          h(Button, { size: "sm", onClick: () => handleAddFloorQuick(c.id), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter étage"),
+          h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("floor", c.id), disabled: loading }, h(Edit, { className: "w-4 h-4 mr-1" }), "Ajouter (modal)")
         ),
 
         (floorsMap[c.id] ?? []).length === 0 ? h("div", { className: "text-sm text-gray-500" }, "Aucun étage. Ajoutez-en un.") :
@@ -352,12 +401,12 @@ export function CliniqueManagement(): React.ReactElement {
               h("div", { className: "ml-2 font-medium" }, f.nom)
             ),
             h("div", { className: "flex gap-2" },
-              h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("floor", { ...f, clinique_id: c.id }, c.id); } }, h(Edit, { className: "w-4 h-4" })),
+              h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("floor", { ...f, clinique_id: c.id }, c.id); }, disabled: loading }, h(Edit, { className: "w-4 h-4" })),
 
               // AlertDialog for delete floor
               h(AlertDialog, {},
                 h(AlertDialogTrigger, { asChild: true },
-                  h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation() }, h(Trash2, { className: "w-4 h-4" }))
+                  h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
                 ),
                 h(AlertDialogContent, null,
                   h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer l'étage")),
@@ -379,8 +428,8 @@ export function CliniqueManagement(): React.ReactElement {
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) => setServiceInputs((p) => ({ ...p, [f.id]: e.target.value })),
                 className: "max-w-sm"
               }),
-              h(Button, { size: "sm", onClick: () => handleAddServiceQuick(f.id) }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter service"),
-              h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("service", f.id) }, h(Edit, { className: "w-4 h-4 mr-1" }), "Modal service")
+              h(Button, { size: "sm", onClick: () => handleAddServiceQuick(f.id), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter service"),
+              h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("service", f.id), disabled: loading }, h(Edit, { className: "w-4 h-4 mr-1" }), "Modal service")
             ),
 
             (servicesMap[f.id] ?? []).length === 0 ? h("div", { className: "text-sm text-gray-500 ml-2" }, "Aucun service") :
@@ -391,12 +440,12 @@ export function CliniqueManagement(): React.ReactElement {
                   h("div", null, s.nom)
                 ),
                 h("div", { className: "flex gap-2" },
-                  h(Button, { size: "sm", variant: "outline", onClick: () => openEditModal("service", { ...s, floor_id: f.id }, f.id) }, h(Edit, { className: "w-4 h-4" })),
+                  h(Button, { size: "sm", variant: "outline", onClick: () => openEditModal("service", { ...s, floor_id: f.id }, f.id), disabled: loading }, h(Edit, { className: "w-4 h-4" })),
 
                   // AlertDialog for delete service
                   h(AlertDialog, {},
                     h(AlertDialogTrigger, { asChild: true },
-                      h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation() }, h(Trash2, { className: "w-4 h-4" }))
+                      h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
                     ),
                     h(AlertDialogContent, null,
                       h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer le service")),
