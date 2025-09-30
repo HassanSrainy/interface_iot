@@ -34,6 +34,12 @@ Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::
 // routes/api.php
 Route::get('/capteurs/{id}/alertes/nbr', [CapteurController::class, 'alertesCount']);
 
+Route::get('/cliniques/{clinique}/summary', [CliniqueController::class, 'summaryByClinique']); // résumé par clinique
+Route::get('/cliniques/{clinique}/alertes', [CliniqueController::class, 'alertesParClinique']); // si déjà présent
+// routes/api.php
+Route::get('/cliniques/{id}/services', [CliniqueController::class, 'getServicesByClinique']);
+
+
 
 
 Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {

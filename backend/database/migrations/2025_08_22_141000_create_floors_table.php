@@ -11,9 +11,15 @@ return new class extends Migration
         Schema::create('floors', function (Blueprint $table) {
             $table->id();
             $table->foreignId('clinique_id')->constrained('cliniques')->onDelete('cascade');
-            $table->string('nom'); 
+            $table->string('nom');           // libellé visible (ex: "Ground Floor", "Rez-de-chaussée")
+            $table->integer('niveau');       // numéro d'étage (ex: 0 = Rez, 1 = 1er)
             $table->timestamps();
-            $table->unique(['clinique_id', 'nom']);
+
+            // Unicité : pas deux mêmes noms pour une même clinique
+            $table->unique(['clinique_id', 'nom'], 'floors_clinique_nom_unique');
+
+            // Unicité : pas deux étages ayant le même niveau dans la même clinique
+            $table->unique(['clinique_id', 'niveau'], 'floors_clinique_niveau_unique');
         });
     }
 

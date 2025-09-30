@@ -9,36 +9,54 @@ use Illuminate\Database\QueryException;
 class FloorController extends Controller
 {
     /**
-     * Afficher tous les étages
+     * Afficher tous les étages (triés par niveau puis id)
      */
     public function index()
     {
-        $floors = Floor::with('clinique', 'services.capteurs')->get();
+        $floors = Floor::with('clinique', 'services.capteurs')
+            ->orderBy('clinique_id')
+            ->orderBy('niveau')
+            ->get();
+
         return response()->json($floors, 200);
     }
 
     /**
      * Créer un nouvel étage
+     * -> niveau est requis (integer)
+     * -> nom est requis (string)
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
             'clinique_id' => 'required|exists:cliniques,id',
-            'nom' => 'required|string|max:255',
+            'nom'         => 'required|string|max:255',
+            'niveau'      => 'required|integer',
         ]);
 
-        // Normalisation du nom : première lettre majuscule, reste minuscule
+        // Normalisation minimale du nom
         $validated['nom'] = ucfirst(strtolower(trim($validated['nom'])));
 
         try {
-            // Vérifier si le même nom existe déjà pour la clinique
-            $exists = Floor::where('clinique_id', $validated['clinique_id'])
+            // unicité nom dans la même clinique
+            $existsNom = Floor::where('clinique_id', $validated['clinique_id'])
                 ->whereRaw('LOWER(nom) = ?', [strtolower($validated['nom'])])
                 ->exists();
 
-            if ($exists) {
+            if ($existsNom) {
                 return response()->json([
                     'message' => "L'étage '{$validated['nom']}' existe déjà pour cette clinique."
+                ], 409);
+            }
+
+            // unicité niveau dans la même clinique
+            $existsNiveau = Floor::where('clinique_id', $validated['clinique_id'])
+                ->where('niveau', $validated['niveau'])
+                ->exists();
+
+            if ($existsNiveau) {
+                return response()->json([
+                    'message' => "Un étage avec le niveau {$validated['niveau']} existe déjà pour cette clinique."
                 ], 409);
             }
 
@@ -46,12 +64,13 @@ class FloorController extends Controller
 
             return response()->json([
                 'message' => 'Étage créé avec succès',
-                'data' => $floor
+                'data'    => $floor
             ], 201);
 
         } catch (QueryException $e) {
             return response()->json([
-                'message' => 'Une erreur est survenue lors de la création de l’étage.'
+                'message' => 'Une erreur est survenue lors de la création de l’étage.',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -72,6 +91,7 @@ class FloorController extends Controller
 
     /**
      * Mettre à jour un étage
+     * -> ici on utilise 'sometimes' parce que update peut être partiel (PATCH)
      */
     public function update(Request $request, $id)
     {
@@ -83,22 +103,34 @@ class FloorController extends Controller
 
         $validated = $request->validate([
             'clinique_id' => 'sometimes|exists:cliniques,id',
-            'nom' => 'sometimes|string|max:255',
-            'numero' => 'sometimes|integer',
+            'nom'         => 'sometimes|string|max:255',
+            'niveau'      => 'sometimes|integer',
         ]);
 
         if (isset($validated['nom'])) {
             $validated['nom'] = ucfirst(strtolower(trim($validated['nom'])));
 
-            // Vérifier unicité dans la clinique
-            $exists = Floor::where('clinique_id', $validated['clinique_id'] ?? $floor->clinique_id)
+            $existsNom = Floor::where('clinique_id', $validated['clinique_id'] ?? $floor->clinique_id)
                 ->whereRaw('LOWER(nom) = ?', [strtolower($validated['nom'])])
                 ->where('id', '!=', $id)
                 ->exists();
 
-            if ($exists) {
+            if ($existsNom) {
                 return response()->json([
                     'message' => "Un autre étage avec le nom '{$validated['nom']}' existe déjà dans cette clinique."
+                ], 409);
+            }
+        }
+
+        if (array_key_exists('niveau', $validated)) {
+            $sameLevel = Floor::where('clinique_id', $validated['clinique_id'] ?? $floor->clinique_id)
+                ->where('niveau', $validated['niveau'])
+                ->where('id', '!=', $id)
+                ->exists();
+
+            if ($sameLevel) {
+                return response()->json([
+                    'message' => "Un autre étage avec le niveau {$validated['niveau']} existe déjà pour cette clinique."
                 ], 409);
             }
         }
@@ -134,6 +166,7 @@ class FloorController extends Controller
     {
         $floors = Floor::where('clinique_id', $cliniqueId)
             ->with('services.capteurs')
+            ->orderBy('niveau')
             ->get();
 
         return response()->json($floors);

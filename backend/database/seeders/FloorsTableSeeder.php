@@ -10,16 +10,23 @@ class FloorsTableSeeder extends Seeder
 {
     public function run(): void
     {
-        $floorsNames = ['Ground Floor', 'First Floor', 'Second Floor'];
+        // Définitions typiques — nom + niveau
+        $floorsTemplate = [
+            ['nom' => 'Ground Floor', 'niveau' => 0],
+            ['nom' => 'First Floor',  'niveau' => 1],
+            ['nom' => 'Second Floor', 'niveau' => 2],
+        ];
+
         $cliniques = Clinique::pluck('id')->toArray();
 
         foreach ($cliniques as $clinique_id) {
-            foreach ($floorsNames as $name) {
+            foreach ($floorsTemplate as $f) {
                 DB::table('floors')->insert([
                     'clinique_id' => $clinique_id,
-                    'nom' => $name,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'nom'         => $f['nom'],
+                    'niveau'      => $f['niveau'],
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
                 ]);
             }
         }
