@@ -230,27 +230,25 @@ export function DashboardOverviewUser({
               ) : (
                 sensors.map((sensor) => (
                   <SensorCard
-                    key={String(sensor.id)}
-                    sensor={sensor}
-                    alertesCount={
-                      loadingCounts
-                        ? undefined
-                        : alertesActiveMap[Number(sensor.id)] ?? 0
-                    }
-                    totalAlertes={
-                      loadingCounts
-                        ? undefined
-                        : alertesTotalsMap[Number(sensor.id)] ?? 0
-                    }
-                    showEvolution
-                    onShowChart={(id) => {
-                      const s =
-                        sensors.find((x) => String(x.id) === String(id)) ||
-                        sensor;
-                      setSelectedSensor(s as Sensor);
-                      onShowSensorEvolution?.(id);
-                    }}
-                  />
+  key={String(sensor.id)}
+  sensor={sensor}
+  alertesCount={
+    loadingCounts ? undefined : alertesActiveMap[Number(sensor.id)] ?? 0
+  }
+  totalAlertes={
+    loadingCounts ? undefined : alertesTotalsMap[Number(sensor.id)] ?? 0
+  }
+  showFullHierarchy={true}  // ✅ Active l'affichage de la hiérarchie
+  showEvolution
+  onShowChart={(id) => {
+    const s =
+      sensors.find((x) => String(x.id) === String(id)) ||
+      sensor;
+    setSelectedSensor(s as Sensor);
+    onShowSensorEvolution?.(id);
+  }}
+/>
+
                 ))
               )}
             </div>
