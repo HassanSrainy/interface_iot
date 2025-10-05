@@ -38,6 +38,15 @@ Route::get('/cliniques/{clinique}/summary', [CliniqueController::class, 'summary
 Route::get('/cliniques/{clinique}/alertes', [CliniqueController::class, 'alertesParClinique']); // si déjà présent
 // routes/api.php
 Route::get('/cliniques/{id}/services', [CliniqueController::class, 'getServicesByClinique']);
+//cliniques d'un user
+
+Route::get('/users/{id}/cliniques', [CliniqueController::class, 'cliniquesByUser']);
+
+    // Capteurs appartenant aux cliniques de cet utilisateur
+Route::get('/users/{id}/capteurs', [CapteurController::class, 'capteursByCliniqueUser']);
+
+    // Alertes appartenant aux cliniques de cet utilisateur
+Route::get('/users/{id}/alertes', [AlerteController::class, 'alertesByCliniqueUser']);
 
 
 

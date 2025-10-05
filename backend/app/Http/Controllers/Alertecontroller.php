@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Alerte;
 use Illuminate\Http\Request;
+use App\Models\User;
 
 class AlerteController extends Controller
 {
@@ -92,4 +93,26 @@ class AlerteController extends Controller
 
         return response()->json(['message' => 'Alerte supprimée avec succès']);
     }
+
+
+public function alertesByCliniqueUser($userId)
+{
+    $user = User::find($userId);
+
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur introuvable'], 404);
+    }
+
+    $cliniqueIds = $user->cliniques()->pluck('cliniques.id');
+
+    // Toutes les alertes liées aux capteurs de ces cliniques
+    $alertes = Alerte::whereHas('capteur.service.floor', function ($q) use ($cliniqueIds) {
+        $q->whereIn('clinique_id', $cliniqueIds);
+    })
+    ->with(['capteur.famille', 'capteur.service.floor.clinique'])
+    ->get();
+
+    return response()->json($alertes, 200);
+}
+
 }

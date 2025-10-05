@@ -21,7 +21,6 @@ import {
   X,
 } from "lucide-react";
 
-
 interface DashboardOverviewProps {
   sensors?: Sensor[];
   alertes?: any[];
@@ -42,20 +41,25 @@ export function DashboardOverview({
   const [sensors, setSensors] = useState<Sensor[]>(Array.isArray(propsSensors) ? propsSensors : []);
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [chartPeriod, setChartPeriod] = useState<PeriodOption>("1h");
+
+  // maps for alert counts per sensor
   const [alertesTotalsMap, setAlertesTotalsMap] = useState<Record<number, number>>({});
   const [alertesActiveMap, setAlertesActiveMap] = useState<Record<number, number>>({});
+
+  // loading states
   const [loadingSensors, setLoadingSensors] = useState<boolean>(false);
   const [loadingCounts, setLoadingCounts] = useState<boolean>(false);
 
+  // clinics data
   const [clinicsLoading, setClinicsLoading] = useState<boolean>(false);
   const [clinicsData, setClinicsData] = useState<any[]>([]);
 
+  // global alertes (panel)
   const [fetchedAlertes, setFetchedAlertes] = useState<any[]>(Array.isArray(propsAlertes) ? propsAlertes : []);
   const [loadingAlertes, setLoadingAlertes] = useState<boolean>(false);
   const [alertesError, setAlertesError] = useState<string | null>(null);
 
   const isFullCapteurs = sensors.length > 0 && !!(sensors[0] as any)?.service?.floor?.clinique;
-
   const alertes = propsAlertes && propsAlertes.length > 0 ? propsAlertes : fetchedAlertes;
 
   const isAlerteActive = (s: any) => {
@@ -63,28 +67,66 @@ export function DashboardOverview({
     return statut === "active" || statut === "actif";
   };
 
+  /**
+   * loadAll: récupère les capteurs ET les comptes d'alertes
+   * - on garde loadingSensors = true jusqu'à ce que capteurs + comptes soient prêts
+   * - évite le double rendu (chargement puis disparition)
+   */
   const loadAll = useCallback(async () => {
+    setLoadingSensors(true);
     try {
-      if (!propsSensors || propsSensors.length === 0) {
-        setLoadingSensors(true);
-        const s = await getSensors();
-        const normalizedSensors = (s || []).map(sensor => ({
-          ...sensor,
-          status: sensor.status === null ? undefined : sensor.status,
-        }));
-        setSensors(normalizedSensors);
-        setLoadingSensors(false);
-      } else {
-        setSensors(propsSensors);
+      // 1) récupérer capteurs (ou utiliser propsSensors si fournis)
+      const rawSensors = (propsSensors && propsSensors.length > 0) ? propsSensors : await getSensors();
+      const normalizedSensors = (rawSensors || []).map((sensor: any) => ({
+        ...sensor,
+        status: sensor.status === null ? undefined : sensor.status,
+      }));
+      setSensors(normalizedSensors);
+
+      // 2) récupérer les comptes d'alertes pour chaque capteur (en parallèle)
+      setLoadingCounts(true);
+      try {
+        const results = await Promise.all(
+          normalizedSensors.map(async (s: any) => {
+            try {
+              const payload = await getSensorAlertCount(Number(s.id));
+              return {
+                id: Number(s.id),
+                total: Number(payload?.total_alertes ?? 0),
+                active: Number(payload?.active_alertes ?? 0),
+              };
+            } catch (err) {
+              console.error(`Erreur getSensorAlertCount(${s.id}):`, err);
+              return { id: Number(s.id), total: 0, active: 0 };
+            }
+          })
+        );
+
+        const totals: Record<number, number> = {};
+        const actives: Record<number, number> = {};
+        for (const r of results) {
+          totals[r.id] = r.total;
+          actives[r.id] = r.active;
+        }
+        setAlertesTotalsMap(prev => ({ ...prev, ...totals }));
+        setAlertesActiveMap(prev => ({ ...prev, ...actives }));
+      } finally {
+        setLoadingCounts(false);
       }
     } catch (err) {
       console.error("Erreur loadAll:", err);
+    } finally {
       setLoadingSensors(false);
     }
   }, [propsSensors]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
+  /**
+   * loadClinicsHierarchy: inchangée (récupère hiérarchie cliniques / services)
+   */
   const loadClinicsHierarchy = useCallback(async () => {
     setClinicsLoading(true);
     try {
@@ -147,6 +189,9 @@ export function DashboardOverview({
     if (!isFullCapteurs) loadClinicsHierarchy();
   }, [isFullCapteurs, loadClinicsHierarchy]);
 
+  /**
+   * fetchAlertes (panel global) - inchangé
+   */
   const fetchAlertes = useCallback(async () => {
     let mounted = true;
     try {
@@ -185,48 +230,9 @@ export function DashboardOverview({
     }
   };
 
-  useEffect(() => {
-    if (!sensors || sensors.length === 0) return;
-
-    const fetchCountsForAll = async () => {
-      setLoadingCounts(true);
-      try {
-        const results = await Promise.all(
-          sensors.map(async (s) => {
-            try {
-              const res = await getSensorAlertCount(Number(s.id));
-              return { id: Number(s.id), ok: true, payload: res };
-            } catch (err) {
-              console.error(`Erreur getSensorAlertCount(${s.id}):`, err);
-              return { id: Number(s.id), ok: false, payload: null };
-            }
-          })
-        );
-
-        const totals: Record<number, number> = {};
-        const actives: Record<number, number> = {};
-        for (const r of results) {
-          if (r.ok && r.payload) {
-            totals[r.id] = Number(r.payload.total_alertes ?? 0);
-            actives[r.id] = Number(r.payload.active_alertes ?? 0);
-          } else {
-            totals[r.id] = 0;
-            actives[r.id] = 0;
-          }
-        }
-
-        setAlertesTotalsMap(prev => ({ ...prev, ...totals }));
-        setAlertesActiveMap(prev => ({ ...prev, ...actives }));
-      } catch (err) {
-        console.error("Erreur fetchCountsForAll:", err);
-      } finally {
-        setLoadingCounts(false);
-      }
-    };
-
-    fetchCountsForAll();
-  }, [sensors]);
-
+  /**
+   * filterMeasuresByPeriod - inchangée
+   */
   const filterMeasuresByPeriod = (sensor: Sensor | null | undefined) => {
     if (!sensor?.mesures || sensor.mesures.length === 0) return [];
     const now = new Date();
@@ -254,10 +260,6 @@ export function DashboardOverview({
   const shouldUseClinicsData = clinicsData && clinicsData.length > 0;
   const totalActiveAlerts = (alertes || []).filter(isAlerteActive).length;
 
-  /**
-   * NOTE: PERIODS is explicitly typed so TypeScript knows `key` is a PeriodOption.
-   * This avoids the "Argument of type 'string' is not assignable..." error.
-   */
   const PERIODS: { key: PeriodOption; label: string }[] = [
     { key: "1h", label: "1h" },
     { key: "24h", label: "24h" },
@@ -280,104 +282,102 @@ export function DashboardOverview({
         </TabsList>
 
         <TabsContent value="evolution">
-  {selectedSensor ? (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <button
-          type="button"
-          onClick={() => setSelectedSensor(null)}
-          className="text-sm underline"
-        >
-          ← Retour aux cartes
-        </button>
+          {selectedSensor ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSensor(null)}
+                  className="text-sm underline"
+                >
+                  ← Retour aux cartes
+                </button>
 
-        {/* Period buttons: use the typed PERIODS array */}
-        <div className="flex space-x-2">
-          {PERIODS.map(({ key, label }) => {
-            const active = chartPeriod === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setChartPeriod(key)}
-                aria-pressed={active}
-                className={
-                  `px-3 py-1 rounded-full transition-flex flex items-center justify-center text-sm ` +
-                  (active
-                    ? "border-2 border-black shadow-sm bg-white"
-                    : "border border-gray-300 bg-white hover:bg-gray-100")
-                }
-              >
-                <span className="text-sm">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+                <div className="flex space-x-2">
+                  {PERIODS.map(({ key, label }) => {
+                    const active = chartPeriod === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setChartPeriod(key)}
+                        aria-pressed={active}
+                        className={
+                          `px-3 py-1 rounded-full transition-flex flex items-center justify-center text-sm ` +
+                          (active
+                            ? "border-2 border-black shadow-sm bg-white"
+                            : "border border-gray-300 bg-white hover:bg-gray-100")
+                        }
+                      >
+                        <span className="text-sm">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-      {/* SensorChart */}
-      <div>
-        <h4 className="text-lg font-semibold">
-          Graphique — {selectedSensor?.matricule ?? `#${selectedSensor?.id}`}
-        </h4>
+              <div>
+                <h4 className="text-lg font-semibold">
+                  Graphique — {selectedSensor?.matricule ?? `#${selectedSensor?.id}`}
+                </h4>
 
-        <div className="mt-2">
-          {filterMeasuresByPeriod(selectedSensor).length === 0 ? (
-            <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>
+                <div className="mt-2">
+                  {filterMeasuresByPeriod(selectedSensor).length === 0 ? (
+                    <div className="text-muted-foreground">Aucune mesure disponible pour ce capteur.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart
+                        data={filterMeasuresByPeriod(selectedSensor)}
+                        margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                        <YAxis />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                        {selectedSensor?.seuil_max != null && (
+                          <ReferenceLine y={selectedSensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />
+                        )}
+                        {selectedSensor?.seuil_min != null && (
+                          <ReferenceLine y={selectedSensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />
+                        )}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
           ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart
-                data={filterMeasuresByPeriod(selectedSensor)}
-                margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                {selectedSensor?.seuil_max != null && (
-                  <ReferenceLine y={selectedSensor.seuil_max} stroke="red" strokeDasharray="4 4" label="Seuil max" />
-                )}
-                {selectedSensor?.seuil_min != null && (
-                  <ReferenceLine y={selectedSensor.seuil_min} stroke="green" strokeDasharray="4 4" label="Seuil min" />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {loadingSensors ? (
+                <div className="col-span-full flex justify-center items-center py-8 text-muted-foreground">
+                  Chargement des capteurs...
+                </div>
+              ) : sensors.length === 0 ? (
+                <div className="col-span-full flex justify-center py-8 text-muted-foreground">
+                  Aucun capteur trouvé.
+                </div>
+              ) : (
+                sensors.map(sensor => (
+                  <SensorCard
+                    key={String(sensor.id)}
+                    sensor={sensor}
+                    showFullHierarchy={isFullCapteurs}
+                    // si les counts sont en cours, on passe undefined pour permettre au SensorCard d'afficher un spinner ou valeur placeholder
+                    alertesCount={loadingCounts ? undefined : alertesActiveMap[Number(sensor.id)] ?? 0}
+                    totalAlertes={loadingCounts ? undefined : alertesTotalsMap[Number(sensor.id)] ?? 0}
+                    showEvolution
+                    onShowChart={id => {
+                      const s = sensors.find(x => String(x.id) === String(id)) || sensor;
+                      setSelectedSensor(s as Sensor);
+                      onShowSensorEvolution?.(id);
+                    }}
+                  />
+                ))
+              )}
+            </div>
           )}
-        </div>
-      </div>
-    </div>
-  ) : (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {loadingSensors ? (
-        <div className="col-span-full flex justify-center items-center py-8 text-muted-foreground">
-          Chargement des capteurs...
-        </div>
-      ) : sensors.length === 0 ? (
-        <div className="col-span-full flex justify-center py-8 text-muted-foreground">
-          Aucun capteur trouvé.
-        </div>
-      ) : (
-        sensors.map(sensor => (
-          <SensorCard
-            key={String(sensor.id)}
-            sensor={sensor}
-            showFullHierarchy={isFullCapteurs}
-            alertesCount={alertesActiveMap[Number(sensor.id)] ?? 0}
-            totalAlertes={alertesTotalsMap[Number(sensor.id)] ?? 0}
-            showEvolution
-            onShowChart={id => {
-              const s = sensors.find(x => String(x.id) === String(id)) || sensor;
-              setSelectedSensor(s as Sensor);
-              onShowSensorEvolution?.(id);
-            }}
-          />
-        ))
-      )}
-    </div>
-  )}
-</TabsContent>
-
+        </TabsContent>
 
         <TabsContent value="clinics">
           {clinicsLoading && !(clinicsData && clinicsData.length > 0) ? (

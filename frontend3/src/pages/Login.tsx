@@ -9,13 +9,18 @@ import { Label } from "../components/ui/label";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Wifi, AlertCircle } from "lucide-react";
 
-// Interface pour TypeScript
+// Interface pour TypeScript (role optionnel car différentes APIs renvoient des formats différents)
 interface LoginResponse {
   message: string;
   user: {
     id: number;
     name: string;
     email: string;
+    // role peut être string, ou roles array, ou is_admin bool, etc.
+    role?: string;
+    roles?: string[] | { name?: string }[];
+    is_admin?: boolean;
+    [k: string]: any;
   };
   token: string;
 }
@@ -27,21 +32,48 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // helper pour extraire un role lisible depuis la réponse
+  const extractRole = (u: any): string | undefined => {
+    if (!u) return undefined;
+    if (typeof u.role === "string" && u.role) return u.role;
+    if (Array.isArray(u.roles) && u.roles.length) {
+      // roles peut être ["admin"] ou [{name: "admin"}]
+      const first = u.roles[0];
+      if (typeof first === "string") return first;
+      if (first && typeof first.name === "string") return first.name;
+    }
+    if (typeof u.is_admin === "boolean") return u.is_admin ? "admin" : "user";
+    if (typeof u.role_name === "string") return u.role_name;
+    return undefined;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      // On passe un objet { email, password } pour respecter TypeScript
       const res: LoginResponse = await apiLogin({ email, password });
 
-      // Stockage du user et du token
-      localStorage.setItem("user", JSON.stringify(res.user));
+      // déterminer role de façon robuste
+      const role = extractRole(res.user);
+
+      // pour être sûr que localStorage contient toujours un champ role, on enrichit user si besoin
+      const userToStore = { ...res.user, role };
+
+      // Stockage
+      localStorage.setItem("user", JSON.stringify(userToStore));
       localStorage.setItem("token", res.token);
 
-      console.log("Utilisateur connecté :", res.user);
-      navigate("/"); // redirection vers dashboard
+      console.log("Utilisateur connecté :", userToStore);
+
+      // Redirection selon le role
+      if (role === "admin") {
+        navigate("/"); // dashboard admin
+      } else {
+        // si role absent ou différent d'admin -> page utilisateur
+        navigate("/user");
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || "Erreur lors de la connexion");
     } finally {
@@ -50,6 +82,7 @@ export function LoginPage() {
   };
 
   const handleDemoLogin = () => {
+    // Remplit simplement le formulaire; le login réel se fait via l'API
     setEmail("user1@example.com");
     setPassword("password123");
   };

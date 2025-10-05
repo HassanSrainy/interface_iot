@@ -178,6 +178,18 @@ protected function formatFloorLabelFromNiveauOrIndex(?int $niveau, int $fallback
     if ($niveau === 1) return '1er étage';
     return $niveau . 'ème étage';
 }
+public function cliniquesByUser($userId)
+{
+    $user = \App\Models\User::find($userId);
 
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur introuvable'], 404);
+    }
+
+    // Relation many-to-many via la table pivot clinique_user
+    $cliniques = $user->cliniques()->with('floors.services.capteurs')->get();
+
+    return response()->json($cliniques, 200);
+}
 
 }

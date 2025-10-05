@@ -126,4 +126,9 @@ export const getServicesByClinique = async (cliniqueId: number): Promise<any[]> 
   const res = await api.get(`/cliniques/${cliniqueId}/services`);
   return res.data;
 };
+export const getCliniquesByUser = async (userId: number): Promise<any[]> => {
+  const res = await api.get(`/users/${userId}/cliniques`);
+  return res.data;
+};
+
 

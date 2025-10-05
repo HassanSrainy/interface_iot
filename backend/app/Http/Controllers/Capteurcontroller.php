@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Capteur;
-
+use App\Models\User;
 class CapteurController extends Controller
 {
     /**
@@ -146,6 +146,28 @@ public function alertesCount(string $id)
     ]);
 }
 
+
+
+public function capteursByCliniqueUser($userId)
+{
+    $user = User::find($userId);
+
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur introuvable'], 404);
+    }
+
+    // Récupérer les ID des cliniques de l'utilisateur
+    $cliniqueIds = $user->cliniques()->pluck('cliniques.id');
+
+    // Capteurs de toutes les cliniques associées à cet utilisateur
+    $capteurs = Capteur::whereHas('service.floor', function ($q) use ($cliniqueIds) {
+        $q->whereIn('clinique_id', $cliniqueIds);
+    })
+    ->with(['famille.type', 'service.floor.clinique', 'alertes', 'derniereMesure'])
+    ->get();
+
+    return response()->json($capteurs, 200);
+}
 
     
 }

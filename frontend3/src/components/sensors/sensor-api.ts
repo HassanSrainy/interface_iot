@@ -49,3 +49,20 @@ export const getSensorAlertCount = async (id: number): Promise<SensorAlertCount>
   const res = await api.get(`/capteurs/${id}/alertes/nbr`);
   return res.data;
 };
+// --- en haut du fichier (garde les autres exports) ---
+export const getSensorsByUser = async (userId: number): Promise<Sensor[]> => {
+  // si ton axios instance ajoute déjà l'Authorization header automatiquement, rien de spécial à faire
+  const res = await api.get(`/users/${userId}/capteurs`);
+  return res.data;
+};
+// frontend3/src/components/sensors/sensor-api.ts
+// (place-la avec les autres exports API)
+
+export const getSensorsByService = async (serviceId: number): Promise<Sensor[]> => {
+  // Adapte l'endpoint selon ton API.
+  // Possibilités courantes :
+  //  - /services/{id}/capteurs
+  //  - /capteurs?service_id={id}
+  const res = await api.get(`/services/${serviceId}/capteurs`);
+  return res.data;
+};
