@@ -163,7 +163,7 @@ public function capteursByCliniqueUser($userId)
     $capteurs = Capteur::whereHas('service.floor', function ($q) use ($cliniqueIds) {
         $q->whereIn('clinique_id', $cliniqueIds);
     })
-    ->with(['famille.type', 'service.floor.clinique', 'alertes', 'derniereMesure'])
+    ->with(['famille.type', 'service.floor.clinique', 'alertes', 'derniereMesure','mesures'])
     ->get();
 
     return response()->json($capteurs, 200);

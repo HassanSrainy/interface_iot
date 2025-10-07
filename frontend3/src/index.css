@@ -4921,3 +4921,5 @@ html {
     opacity: 0;
   }
 }
+
+@import 'react-datepicker/dist/react-datepicker.css';

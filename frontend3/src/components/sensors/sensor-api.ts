@@ -10,13 +10,23 @@ export interface Alerte {
   date_creation?: string;
 }
 
+export interface Mesure {
+  id?: number;
+  date_mesure?: string; // format venant du backend (on normalisera côté front)
+  valeur?: number;
+  [k: string]: any;
+}
 
 export interface Sensor {
   id: number;
   matricule: string;
+  nom?: string;
+  label?: string;
   status?: "online" | "offline" | null;
   alertes?: Alerte[];
-  // tu peux ajouter d'autres champs si nécessaire
+  mesures?: Mesure[]; // IMPORTANT : la propriété attendue côté front
+  derniereMesure?: Mesure | null;
+  [k: string]: any;
 }
 
 export interface SensorAlertCount {
@@ -49,20 +59,23 @@ export const getSensorAlertCount = async (id: number): Promise<SensorAlertCount>
   const res = await api.get(`/capteurs/${id}/alertes/nbr`);
   return res.data;
 };
-// --- en haut du fichier (garde les autres exports) ---
+
+// --- ajout : récupérer les capteurs d'un utilisateur (utilise l'API axios 'api')
 export const getSensorsByUser = async (userId: number): Promise<Sensor[]> => {
-  // si ton axios instance ajoute déjà l'Authorization header automatiquement, rien de spécial à faire
   const res = await api.get(`/users/${userId}/capteurs`);
   return res.data;
 };
-// frontend3/src/components/sensors/sensor-api.ts
-// (place-la avec les autres exports API)
 
+// --- ajout : récupérer capteurs par service (optionnel)
 export const getSensorsByService = async (serviceId: number): Promise<Sensor[]> => {
-  // Adapte l'endpoint selon ton API.
-  // Possibilités courantes :
-  //  - /services/{id}/capteurs
-  //  - /capteurs?service_id={id}
   const res = await api.get(`/services/${serviceId}/capteurs`);
+  return res.data;
+};
+
+// --- ajout optionnel : récupérer mesures d'un capteur (si nécessaire)
+export const getSensorMesures = async (sensorId: number, days?: number): Promise<Mesure[]> => {
+  const params: any = {};
+  if (typeof days === 'number') params.days = days;
+  const res = await api.get(`/capteurs/${sensorId}/mesures`, { params });
   return res.data;
 };

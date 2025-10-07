@@ -29,7 +29,11 @@ interface DashboardOverviewProps {
   onShowSensorEvolution?: (sensorId: string | number) => void;
 }
 
-type PeriodOption = "1h" | "24h" | "7d" | "30d";
+type PeriodOption = "1h" | "24h" | "7d" | "30d" | "custom";
+
+/* util : timestamp début/fin d'une date YYYY-MM-DD */
+const startOfDayTs = (dateYMD: string) => new Date(`${dateYMD}T00:00:00`).getTime();
+const endOfDayTs = (dateYMD: string) => new Date(`${dateYMD}T23:59:59.999`).getTime();
 
 export function DashboardOverview({
   sensors: propsSensors = [],
@@ -41,6 +45,10 @@ export function DashboardOverview({
   const [sensors, setSensors] = useState<Sensor[]>(Array.isArray(propsSensors) ? propsSensors : []);
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [chartPeriod, setChartPeriod] = useState<PeriodOption>("1h");
+
+  // custom date range (YYYY-MM-DD)
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo, setDateTo] = useState<string | null>(null);
 
   // maps for alert counts per sensor
   const [alertesTotalsMap, setAlertesTotalsMap] = useState<Record<number, number>>({});
@@ -231,27 +239,53 @@ export function DashboardOverview({
   };
 
   /**
-   * filterMeasuresByPeriod - inchangée
+   * filterMeasuresByPeriod - extended with custom date range support
    */
   const filterMeasuresByPeriod = (sensor: Sensor | null | undefined) => {
     if (!sensor?.mesures || sensor.mesures.length === 0) return [];
     const now = new Date();
     let startDate: Date;
+    let endDate: Date = now;
     switch (chartPeriod) {
-      case "1h": startDate = new Date(now.getTime() - 60 * 60 * 1000); break;
-      case "24h": startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
-      case "7d": startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-      case "30d": startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-      default: startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      case "1h":
+        startDate = new Date(now.getTime() - 60 * 60 * 1000);
+        break;
+      case "24h":
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case "7d":
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case "30d":
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case "custom":
+        if (dateFrom && dateTo) {
+          startDate = new Date(startOfDayTs(dateFrom));
+          endDate = new Date(endOfDayTs(dateTo));
+          if (startDate > endDate) {
+            // swap if inverted
+            const tmp = startDate;
+            startDate = endDate;
+            endDate = tmp;
+          }
+        } else {
+          // no custom range selected => return empty
+          return [];
+        }
+        break;
+      default:
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     }
-    const endDate = now;
+
     return sensor.mesures
       .filter(m => {
-        const date = new Date(m.date_mesure);
+        // robust parsing fallback if date_mesure is not already a Date
+        const date = m?.date_mesure instanceof Date ? m.date_mesure : new Date(m.date_mesure);
         return date >= startDate && date <= endDate;
       })
       .map(m => ({
-        date: m.date_mesure ? new Date(m.date_mesure).toLocaleString() : String(m.id ?? ""),
+        date: m.date_mesure ? (m.date_mesure instanceof Date ? m.date_mesure.toLocaleString() : new Date(m.date_mesure).toLocaleString()) : String(m.id ?? ""),
         value: typeof m.valeur === "number" ? m.valeur : Number(m.valeur || 0),
       }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -265,6 +299,7 @@ export function DashboardOverview({
     { key: "24h", label: "24h" },
     { key: "7d", label: "7j" },
     { key: "30d", label: "30j" },
+    { key: "custom", label: "Personnalisé" },
   ];
 
   return (
@@ -293,7 +328,7 @@ export function DashboardOverview({
                   ← Retour aux cartes
                 </button>
 
-                <div className="flex space-x-2">
+                <div className="flex items-center space-x-2">
                   {PERIODS.map(({ key, label }) => {
                     const active = chartPeriod === key;
                     return (
@@ -313,6 +348,15 @@ export function DashboardOverview({
                       </button>
                     );
                   })}
+
+                  {chartPeriod === "custom" && (
+                    <div className="flex items-center space-x-2 ml-4">
+                      <label className="text-sm">Du:</label>
+                      <input type="date" value={dateFrom ?? ""} onChange={(e) => setDateFrom(e.target.value ?? null)} className="border rounded px-2 py-1 text-sm" />
+                      <label className="text-sm">Au:</label>
+                      <input type="date" value={dateTo ?? ""} onChange={(e) => setDateTo(e.target.value ?? null)} className="border rounded px-2 py-1 text-sm" />
+                    </div>
+                  )}
                 </div>
               </div>
 
