@@ -11,6 +11,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FamilleController;
 use Illuminate\Http\Request;
+use App\Http\Controllers\TypeController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -28,6 +29,8 @@ Route::apiResource('mesures', MesureController::class);
 Route::apiResource('alertes', AlerteController::class);
 Route::apiResource('users', UserController::class);
 Route::apiResource('familles', FamilleController::class);
+Route::apiResource('types', TypeController::class);
+
 // Nested routes pour relations
 Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController::class, 'byClinique']);
 Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);

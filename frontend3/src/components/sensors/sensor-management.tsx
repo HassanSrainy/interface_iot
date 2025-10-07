@@ -24,6 +24,10 @@ import { getFamilies } from '../familles/familles-api';
 import { getCliniques } from '../cliniques/cliniques-api';
 import { getFloors, getFloorsByClinique } from '../floors/floors-api';
 import { getServices, getServicesByFloor } from '../services/services-api';
+// imports pour ouvrir les modals de gestion ( Types / Familles )
+import TypesManagementDialog from '../types/TypesManagementDialog';
+import FamillesManagementDialog from '../familles/FamillesManagementDialog';
+
 
 /* ---------- Types ---------- */
 export interface Clinique { id: number; nom: string; adresse?: string }
@@ -422,6 +426,10 @@ export function SensorManagement({ cliniques = [] }: SensorManagementProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Dialogs pour gérer Types et Familles (modals) */}
+<TypesManagementDialog onSaved={() => loadFamilles()} />
+<FamillesManagementDialog onSaved={() => loadFamilles()} />
+
           <Button
             variant="ghost"
             size="sm"
