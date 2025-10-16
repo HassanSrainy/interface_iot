@@ -52,9 +52,7 @@ Route::get('/users/{id}/capteurs', [CapteurController::class, 'capteursByCliniqu
 Route::get('/users/{id}/alertes', [AlerteController::class, 'alertesByCliniqueUser']);
 
 
-
-
 Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {
     return $request->user();
 });
-Route::post('/logout-all', [AuthController::class, 'logoutAll']);
+

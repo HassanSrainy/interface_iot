@@ -98,16 +98,30 @@ class UserController extends Controller
     /**
      * Supprimer un utilisateur
      */
-    public function destroy($id)
-    {
-        $user = User::find($id);
-
-        if (!$user) {
-            return response()->json(['message' => 'Utilisateur non trouvé'], 404);
-        }
-
-        $user->delete();
-
-        return response()->json(['message' => 'Utilisateur supprimé']);
+   public function destroy($id)
+{
+    // Récupérer l'utilisateur authentifié
+    $authenticatedUser = auth('sanctum')->user();
+    
+    if (!$authenticatedUser) {
+        return response()->json(['message' => 'Non authentifié'], 401);
     }
+
+    $user = User::find($id);
+
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur non trouvé'], 404);
+    }
+
+    // ✅ Empêcher l'auto-suppression
+    if ($authenticatedUser->id == $id) {
+        return response()->json([
+            'message' => 'Vous ne pouvez pas supprimer votre propre compte'
+        ], 403);
+    }
+
+    $user->delete();
+
+    return response()->json(['message' => 'Utilisateur supprimé']);
+}
 }

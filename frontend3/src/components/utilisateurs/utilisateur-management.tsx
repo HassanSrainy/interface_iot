@@ -64,6 +64,9 @@ export function UserManagement() {
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  
+  // ✅ NOUVEAU : État pour l'utilisateur connecté
+  const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
 
   const [formData, setFormData] = useState<UserFormData>({
     name: "",
@@ -95,12 +98,21 @@ export function UserManagement() {
       setCliniques(data);
     } catch (err) {
       console.error("loadCliniques error", err);
-      // keep cliniques as-is but set a global error
       setGlobalError((prev) => prev ?? "Erreur lors du chargement des cliniques.");
     }
   };
 
   useEffect(() => {
+    // ✅ NOUVEAU : Récupérer l'utilisateur connecté depuis localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try {
+        setCurrentUser(JSON.parse(userData));
+      } catch (e) {
+        console.error("Error parsing user data", e);
+      }
+    }
+
     // initial load
     (async () => {
       await Promise.all([loadUsers(), loadCliniques()]);
@@ -204,10 +216,14 @@ export function UserManagement() {
     setUsers((prev) => prev.filter((u) => u.id !== id));
     try {
       await deleteUser(id);
-    } catch (err) {
+      setGlobalError(null);
+    } catch (err: any) {
       console.error("delete error", err);
       setUsers(old); // rollback
-      setGlobalError("Erreur lors de la suppression.");
+      
+      // ✅ MODIFIÉ : Extraire le message d'erreur du serveur
+      const errorMessage = err?.response?.data?.message || "Erreur lors de la suppression.";
+      setGlobalError(errorMessage);
     }
   };
 
@@ -294,8 +310,8 @@ export function UserManagement() {
                             onChange={() => {
                               setFormData((prev) => {
                                 const ids = checked
-                                  ? prev.clinique_ids.filter((id) => id !== c.id) // remove
-                                  : [...prev.clinique_ids, c.id]; // add
+                                  ? prev.clinique_ids.filter((id) => id !== c.id)
+                                  : [...prev.clinique_ids, c.id];
                                 return { ...prev, clinique_ids: ids };
                               });
                             }}
@@ -356,23 +372,40 @@ export function UserManagement() {
                     <TableCell>{u.role}</TableCell>
                     <TableCell>{u.cliniques?.map((c) => c.nom).join(", ") || "—"}</TableCell>
                     <TableCell className="flex space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => openEditDialog(u)} disabled={isLoading || isSaving}>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => openEditDialog(u)} 
+                        disabled={isLoading || isSaving}
+                      >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-4 h-4" /></Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Supprimer l'utilisateur ?</AlertDialogTitle>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Annuler</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDelete(u.id)}>Supprimer</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      
+                      {/* ✅ MODIFIÉ : Masquer le bouton si c'est l'utilisateur connecté */}
+                      {currentUser?.id !== u.id && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              disabled={isLoading || isSaving}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Supprimer l'utilisateur ?</AlertDialogTitle>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Annuler</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDelete(u.id)}>
+                                Supprimer
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

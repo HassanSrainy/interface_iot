@@ -138,23 +138,6 @@ export function LoginPage() {
               {loading ? "Connexion..." : "Se connecter"}
             </Button>
           </form>
-
-          <div className="mt-4 pt-4 border-t">
-            <div className="text-center text-sm text-muted-foreground mb-3">
-              <p>Compte de démonstration :</p>
-              <p>Email: user1@example.com</p>
-              <p>Mot de passe: password123</p>
-            </div>
-            <Button
-              variant="outline"
-              className="w-full"
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-            >
-              Remplir automatiquement
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>
