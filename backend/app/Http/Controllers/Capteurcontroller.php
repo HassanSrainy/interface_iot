@@ -14,7 +14,7 @@ class CapteurController extends Controller
     public function index()
     {
         // Récupérer tous les capteurs avec leur famille, service, mesures et alertes
-        $capteurs = Capteur::with(['famille.type', 'service.floor.clinique', 'mesures', 'alertes','derniereMesure'])->get();
+        $capteurs = Capteur::with(['famille.type', 'service.floor.clinique', 'alertes','derniereMesure'])->get();
         return response()->json($capteurs);
     }
 

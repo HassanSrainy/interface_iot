@@ -1,25 +1,13 @@
 // frontend3/src/components/dashboard/dashboard-overview.tsx
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { getAlertes } from "../alertes/alertes-api";
+import * as cliniquesApi from "../cliniques/cliniques-api";
+import { getSensorAlertCount, getSensors } from "../sensors/sensor-api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import SensorCard, { Sensor } from "./sensor-card";
 import { AlertsPanel } from "./alerts-panel";
 import ClinicOverview from "./clinic-overview";
-import { getSensors, getSensorAlertCount } from "../sensors/sensor-api";
-import * as cliniquesApi from "../cliniques/cliniques-api";
-import { getAlertes } from "../alertes/alertes-api";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
-import {
-  Search,
-  Filter,
-  WifiOff,
-  AlertTriangle,
-  ArrowUp,
-  ArrowDown,
-  CheckCircle2,
-  XCircle,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import SensorCard, { Sensor } from "./sensor-card";
 
 interface DashboardOverviewProps {
   sensors?: Sensor[];
@@ -38,8 +26,6 @@ const endOfDayTs = (dateYMD: string) => new Date(`${dateYMD}T23:59:59.999`).getT
 export function DashboardOverview({
   sensors: propsSensors = [],
   alertes: propsAlertes = [],
-  onResolveAlert,
-  onIgnoreAlert,
   onShowSensorEvolution,
 }: DashboardOverviewProps) {
   const [sensors, setSensors] = useState<Sensor[]>(Array.isArray(propsSensors) ? propsSensors : []);
@@ -131,7 +117,7 @@ export function DashboardOverview({
   useEffect(() => {
     loadAll();
   }, [loadAll]);
-
+  
   /**
    * loadClinicsHierarchy: inchangée (récupère hiérarchie cliniques / services)
    */
@@ -216,14 +202,14 @@ export function DashboardOverview({
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    if (!propsAlertes || propsAlertes.length === 0) {
-      fetchAlertes();
-    } else {
-      setFetchedAlertes(propsAlertes);
-    }
-  }, [propsAlertes, fetchAlertes]);
-
+  // useEffect(() => {
+  //   if (!propsAlertes || propsAlertes.length === 0) {
+  //     fetchAlertes();
+  //   } else {
+  //     setFetchedAlertes(propsAlertes);
+  //   }
+  // }, [propsAlertes, fetchAlertes]);
+  console.log("Application Run ");
   const refreshAlertes = async () => {
     try {
       setLoadingAlertes(true);
@@ -397,11 +383,13 @@ export function DashboardOverview({
                 <div className="col-span-full flex justify-center items-center py-8 text-muted-foreground">
                   Chargement des capteurs...
                 </div>
-              ) : sensors.length === 0 ? (
+              )
+               : sensors.length === 0 ? (
                 <div className="col-span-full flex justify-center py-8 text-muted-foreground">
                   Aucun capteur trouvé.
                 </div>
-              ) : (
+              ) 
+              : (
                 sensors.map(sensor => (
                   <SensorCard
                     key={String(sensor.id)}
