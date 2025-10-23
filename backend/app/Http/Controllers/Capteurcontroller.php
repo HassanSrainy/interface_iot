@@ -145,6 +145,81 @@ public function alertesCount(string $id)
         'active_alertes' => $capteur->alertes_actives_count,
     ]);
 }
+// app/Http/Controllers/CapteurController.php
+
+/**
+ * Retourne le nombre d'alertes (total + actives) pour tous les capteurs
+ * Ou filtré par IDs si fournis en query string
+ */
+public function alertesCountBatch(Request $request)
+{
+    $capteurIds = $request->query('ids'); // ex: ?ids=1,2,3,4
+    
+    $query = Capteur::withCount([
+        'alertes as total_alertes',
+        'alertes as alertes_actives' => function ($q) {
+            $q->where('statut', 'actif');
+        }
+    ]);
+
+    // Si des IDs sont fournis, filtrer
+    if ($capteurIds) {
+        $ids = explode(',', $capteurIds);
+        $query->whereIn('id', $ids);
+    }
+
+    $capteurs = $query->get(['id', 'alertes_count', 'alertes_actives_count']);
+
+    // Reformater en objet simple : { capteur_id: { total, active } }
+    $result = [];
+    foreach ($capteurs as $capteur) {
+        $result[$capteur->id] = [
+            'total_alertes' => $capteur->total_alertes ?? 0,
+            'active_alertes' => $capteur->alertes_actives ?? 0,
+        ];
+    }
+
+    return response()->json($result);
+}
+public function mesures(Request $request, string $id)
+{
+    $capteur = Capteur::find($id);
+    
+    if (!$capteur) {
+        return response()->json(['message' => 'Capteur non trouvé'], 404);
+    }
+    
+    // Récupérer les mesures avec filtres optionnels
+    $query = $capteur->mesures();
+    
+    // Filtre par période (optionnel)
+    if ($request->has('days')) {
+        $days = (int) $request->query('days');
+        $startDate = now()->subDays($days);
+        $query->where('date_mesure', '>=', $startDate);
+    }
+    
+    if ($request->has('date_from') && $request->has('date_to')) {
+        $query->whereBetween('date_mesure', [
+            $request->query('date_from'),
+            $request->query('date_to')
+        ]);
+    }
+    
+    // Limiter le nombre de mesures pour éviter surcharge
+    $limit = min((int) $request->query('limit', 1000), 5000);
+    
+    $mesures = $query
+        ->orderBy('date_mesure', 'desc')
+        ->limit($limit)
+        ->get();
+    
+    return response()->json([
+        'capteur_id' => $capteur->id,
+        'mesures' => $mesures,
+        'count' => $mesures->count()
+    ]);
+}
 
 
 

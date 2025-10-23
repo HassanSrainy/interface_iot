@@ -36,6 +36,10 @@ Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController
 Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);
 // routes/api.php
 Route::get('/capteurs/{id}/alertes/nbr', [CapteurController::class, 'alertesCount']);
+// routes/api.php
+Route::get('/capteurs/alertes/nbr', [CapteurController::class, 'alertesCountBatch']);
+// routes/api.php
+Route::get('/capteurs/{id}/mesures', [CapteurController::class, 'mesures']);
 
 Route::get('/cliniques/{clinique}/summary', [CliniqueController::class, 'summaryByClinique']); // résumé par clinique
 Route::get('/cliniques/{clinique}/alertes', [CliniqueController::class, 'alertesParClinique']); // si déjà présent
