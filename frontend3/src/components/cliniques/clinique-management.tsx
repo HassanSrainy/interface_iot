@@ -2,13 +2,12 @@ import React, { useEffect, useState } from "react";
 import * as cliniquesApi from "./cliniques-api";
 import * as floorsApi from "../floors/floors-api";
 import * as servicesApi from "../services/services-api";
-import * as sensorsApi from "../sensors/sensor-api";
 
 import EntityModal from "./EntityModal";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Card, CardHeader, CardContent, CardTitle } from "../ui/card";
+import { Card, CardHeader, CardContent } from "../ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,11 +18,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from "../ui/alert-dialog";
-import { Trash2, Edit, Plus, ChevronDown, ChevronRight, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { 
+  Trash2, Edit, Plus, ChevronDown, ChevronRight, 
+  Wifi, WifiOff, RefreshCw, Building2, Layers, 
+  Briefcase, Activity 
+} from "lucide-react";
 
-/* Types (keep optional fields for safety) */
 type Clinique = cliniquesApi.Clinique;
-// ensure local Floor type can include 'niveau'
 type Floor = (cliniquesApi.Floor | floorsApi.Floor) & { niveau?: number };
 type Service = cliniquesApi.Service | servicesApi.Service;
 type Capteur = cliniquesApi.Capteur & Partial<{
@@ -43,18 +44,15 @@ export function CliniqueManagement(): React.ReactElement {
   const [expandedFloorIds, setExpandedFloorIds] = useState<Set<number>>(new Set());
   const [expandedServiceIds, setExpandedServiceIds] = useState<Set<number>>(new Set());
 
-  // per-parent isolated inputs
   const [floorInputs, setFloorInputs] = useState<Record<number, string>>({});
   const [serviceInputs, setServiceInputs] = useState<Record<number, string>>({});
 
-  // modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [modalEntity, setModalEntity] = useState<"clinique" | "floor" | "service" | null>(null);
   const [modalParentId, setModalParentId] = useState<number | null>(null);
   const [modalInitial, setModalInitial] = useState<Record<string, any>>({});
 
-  // refresh / loading / error
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,12 +76,10 @@ export function CliniqueManagement(): React.ReactElement {
     }
   };
 
-  // refreshAll: option to clear caches and reload everything
   const refreshAll = async () => {
     setLoading(true);
     setError(null);
     try {
-      // clear caches so lazy loaders will refetch
       setFloorsMap({});
       setServicesMap({});
       setCapteursMap({});
@@ -103,7 +99,6 @@ export function CliniqueManagement(): React.ReactElement {
     setter(next);
   };
 
-  // lazy loaders
   const loadFloorsForClinique = async (cliniqueId: number) => {
     if (!floorsMap[cliniqueId]) {
       const data = await floorsApi.getFloorsByClinique(cliniqueId);
@@ -128,7 +123,6 @@ export function CliniqueManagement(): React.ReactElement {
     toggleSet(expandedServiceIds, setExpandedServiceIds, serviceId);
   };
 
-  // modal helpers
   const openCreateModal = (entity: "clinique" | "floor" | "service", parentId?: number) => {
     setModalMode("create");
     setModalEntity(entity);
@@ -160,7 +154,6 @@ export function CliniqueManagement(): React.ReactElement {
     setModalOpen(true);
   };
 
-  // utility to compute a user-friendly name from niveau
   const niveauToNom = (niveau: number | string | null | undefined) => {
     if (niveau === null || niveau === undefined || niveau === "") return "";
     const n = Number(niveau);
@@ -198,7 +191,6 @@ export function CliniqueManagement(): React.ReactElement {
         await cliniquesApi.createClinique(payload);
         await reloadCliniques();
       } else if (modalEntity === "floor" && modalParentId) {
-        // cast to any until floors-api types accept niveau
         await floorsApi.createFloor({ ...payload, clinique_id: modalParentId } as any);
         const floors = await floorsApi.getFloorsByClinique(modalParentId);
         setFloorsMap((p) => ({ ...p, [modalParentId]: floors }));
@@ -218,12 +210,10 @@ export function CliniqueManagement(): React.ReactElement {
         });
       }
     } else {
-      // edit
       if (modalEntity === "clinique" && payload.id) {
         await cliniquesApi.updateClinique(payload.id, payload);
         await reloadCliniques();
       } else if (modalEntity === "floor" && payload.id && modalParentId) {
-        // cast here too in case payload contains niveau
         await floorsApi.updateFloor(payload.id, payload as any);
         const floors = await floorsApi.getFloorsByClinique(modalParentId);
         setFloorsMap((p) => ({ ...p, [modalParentId]: floors }));
@@ -235,7 +225,6 @@ export function CliniqueManagement(): React.ReactElement {
     }
   };
 
-  // quick add
   const handleAddFloorQuick = async (cliniqueId: number) => {
     const raw = (floorInputs[cliniqueId] ?? "").trim();
     if (raw === "") return;
@@ -243,7 +232,6 @@ export function CliniqueManagement(): React.ReactElement {
     if (isNaN(parsed)) return;
     const niveau = parsed;
     const nom = niveauToNom(niveau);
-    // cast as any to avoid TS error if floorsApi.createFloor's parameter type doesn't include 'niveau'
     await floorsApi.createFloor({ nom, niveau, clinique_id: cliniqueId } as any);
     setFloorInputs((p) => ({ ...p, [cliniqueId]: "" }));
     const floors = await floorsApi.getFloorsByClinique(cliniqueId);
@@ -269,7 +257,6 @@ export function CliniqueManagement(): React.ReactElement {
     });
   };
 
-  // deletes (no native confirm here — confirmation handled by AlertDialog in JSX)
   const handleDeleteClinique = async (id: number) => {
     try {
       await cliniquesApi.deleteClinique(id);
@@ -304,185 +291,323 @@ export function CliniqueManagement(): React.ReactElement {
   const h = React.createElement;
 
   const renderCap = (cap: Capteur) =>
-    h("div", { key: cap.id, className: "p-2 bg-white rounded shadow-sm flex justify-between items-center" },
-      h("div", null,
-        h("div", { className: "font-medium text-sm" }, cap.matricule ?? cap.nom),
-        h("div", { className: "text-xs text-gray-500" }, `${cap.adresse_ip ?? "IP: N/A"} • ${cap.adresse_mac ?? "MAC: N/A"}`)
+    h("div", { 
+      key: cap.id, 
+      className: "p-3 bg-white rounded-lg border border-slate-200 flex justify-between items-center hover:border-blue-300 transition-all shadow-sm" 
+    },
+      h("div", { className: "flex items-center gap-3" },
+        h("div", { className: "p-2 rounded-lg bg-blue-50" },
+          h(Activity, { className: "w-5 h-5 text-blue-600" })
+        ),
+        h("div", null,
+          h("div", { className: "font-medium text-sm text-slate-900" }, cap.matricule ?? cap.nom),
+          h("div", { className: "text-xs text-slate-500 mt-0.5" }, 
+            `${cap.adresse_ip ?? "IP: N/A"} • ${cap.adresse_mac ?? "MAC: N/A"}`
+          )
+        )
       ),
-      h("div", null, (cap.status === "online") ? h(Wifi, { className: "text-green-500" }) : h(WifiOff, { className: "text-gray-400" }))
+      h("div", null, 
+        cap.status === "online" 
+          ? h(Wifi, { className: "w-5 h-5 text-green-500" }) 
+          : h(WifiOff, { className: "w-5 h-5 text-slate-400" })
+      )
     );
 
-  // main render tree
-  return h("div", { className: "space-y-6 p-6" },
-    // header with refresh
-    h("div", { className: "flex items-center justify-between" },
-      h("h1", { className: "text-2xl font-semibold" }, "Gestion des Cliniques"),
-      h("div", { className: "flex items-center gap-3" },
-        // bouton Refresh (icône-only)
-        h(Button, {
-          variant: "ghost",
-          size: "sm",
-          onClick: () => refreshAll(),
-          title: "Rafraîchir",
-          "aria-label": "Rafraîchir les cliniques",
-          disabled: loading,
-          className: "p-2"
-        }, h(RefreshCw, { className: `w-4 h-4 ${loading ? "animate-spin" : ""}` })),
+  return h("div", { className: "min-h-screen bg-slate-50 p-4 md:p-6" },
+    h("div", { className: "max-w-7xl mx-auto space-y-6" },
+      // Header
+      h("div", { className: "flex items-center justify-between pb-4 border-b border-slate-200" },
+        h("div", null,
+          h("h1", { className: "text-3xl font-bold text-slate-900" }, "Gestion des Cliniques"),
+          h("p", { className: "text-slate-600 mt-1" }, "Gérez votre infrastructure médicale")
+        ),
+        h("div", { className: "flex items-center gap-3" },
+          h(Button, {
+            variant: "ghost",
+            size: "sm",
+            onClick: () => refreshAll(),
+            title: "Rafraîchir",
+            "aria-label": "Rafraîchir les cliniques",
+            disabled: loading,
+            className: "p-2"
+          }, h(RefreshCw, { className: `w-4 h-4 ${loading ? "animate-spin" : ""}` })),
 
-        // bouton création
-        h(Button, { onClick: () => openCreateModal("clinique"), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-2" }), "Nouvelle Clinique")
-      )
-    ),
-
-    // error message (accessible)
-    error && h("div", { className: "text-sm text-red-600", role: "status", "aria-live": "polite" }, error),
-
-    // clinics
-    ...cliniques.map((c) => h(Card, { key: c.id, className: "bg-white shadow-md" },
-      h(CardHeader, null,
-        h("div", { className: "flex items-center justify-between w-full" },
-          h("div", {
-            className: "flex items-center gap-3 cursor-pointer",
-            onClick: () => loadFloorsForClinique(c.id)
-          },
-            expandedCliniqueIds.has(c.id) ? h(ChevronDown, {}) : h(ChevronRight, {}),
-            h("div", null,
-              h("div", { className: "text-lg font-medium" }, c.nom),
-              h("div", { className: "text-xs text-gray-500" }, `${(c as any).adresse ?? ""} • ${(c as any).ville ?? ""}`)
-            )
-          ),
-          h("div", { className: "flex gap-2" },
-            h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("clinique", c); }, disabled: loading }, h(Edit, { className: "w-4 h-4" })),
-
-            // AlertDialog for delete clinique
-            h(AlertDialog, {},
-              h(AlertDialogTrigger, { asChild: true },
-                h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
-              ),
-              h(AlertDialogContent, null,
-                h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer la clinique")),
-                h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer la clinique "${c.nom}" ?`),
-                h(AlertDialogFooter, null,
-                  h(AlertDialogCancel, null, "Annuler"),
-                  h(AlertDialogAction, { onClick: () => handleDeleteClinique(c.id) }, "Supprimer")
-                )
-              )
-            )
+          h(Button, { 
+            onClick: () => openCreateModal("clinique"), 
+            disabled: loading 
+          }, 
+            h(Plus, { className: "w-4 h-4 mr-2" }), 
+            "Nouvelle Clinique"
           )
         )
       ),
 
-      // floors area
-      expandedCliniqueIds.has(c.id) && h(CardContent, { className: "pl-8" },
-        h("div", { className: "flex gap-2 items-center mb-3" },
-          h(Input, {
-            placeholder: "Ex: 1 (niveau)",
-            value: floorInputs[c.id] ?? "",
-            onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
-              const val = e.target.value;
-              if (val === "" || /^-?\d*$/.test(val)) {
-                setFloorInputs((p) => ({ ...p, [c.id]: val }));
-              }
-            },
-            className: "max-w-xs",
-            type: "number",
-            step: 1,
-            min: -5
-          }),
-          h(Button, { size: "sm", onClick: () => handleAddFloorQuick(c.id), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter étage"),
-          h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("floor", c.id), disabled: loading }, h(Edit, { className: "w-4 h-4 mr-1" }), "Ajouter (modal)")
+      // Error
+      error && h("div", { 
+        className: "text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-4", 
+        role: "status", 
+        "aria-live": "polite" 
+      }, error),
+
+      // Liste cliniques
+      h("div", { className: "space-y-4" },
+        cliniques.length === 0 && !loading && h("div", { className: "text-center py-16" },
+          h(Building2, { className: "w-16 h-16 mx-auto text-slate-300 mb-4" }),
+          h("p", { className: "text-lg font-medium text-slate-700" }, "Aucune clinique"),
+          h("p", { className: "text-sm text-slate-500 mt-1" }, "Commencez par créer votre première clinique")
         ),
 
-        (floorsMap[c.id] ?? []).length === 0 ? h("div", { className: "text-sm text-gray-500" }, "Aucun étage. Ajoutez-en un.") :
-        (floorsMap[c.id] ?? []).map((f) => h("div", { key: f.id, className: "border-l pl-4 mb-3" },
-          h("div", { className: "flex justify-between items-center" },
-            h("div", { className: "flex items-center cursor-pointer", onClick: () => loadServicesForFloor(f.id) },
-              expandedFloorIds.has(f.id) ? h(ChevronDown, {}) : h(ChevronRight, {}),
-              h("div", { className: "ml-2 font-medium" }, f.nom)
-            ),
-            h("div", { className: "flex gap-2" },
-              h(Button, { size: "sm", variant: "outline", onClick: (e: React.MouseEvent) => { e.stopPropagation(); openEditModal("floor", { ...f, clinique_id: c.id }, c.id); }, disabled: loading }, h(Edit, { className: "w-4 h-4" })),
-
-              // AlertDialog for delete floor
-              h(AlertDialog, {},
-                h(AlertDialogTrigger, { asChild: true },
-                  h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
+        ...cliniques.map((c) => h(Card, { 
+          key: c.id, 
+          className: "bg-white shadow-md hover:shadow-lg transition-all border-slate-200" 
+        },
+          h(CardHeader, { className: "bg-slate-50 border-b border-slate-100" },
+            h("div", { className: "flex items-center justify-between w-full" },
+              h("div", {
+                className: "flex items-center gap-3 cursor-pointer flex-1",
+                onClick: () => loadFloorsForClinique(c.id)
+              },
+                h("div", { className: "p-2 rounded-lg bg-blue-100" },
+                  h(Building2, { className: "w-6 h-6 text-blue-600" })
                 ),
-                h(AlertDialogContent, null,
-                  h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer l'étage")),
-                  h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer l'étage "${f.nom}" ?`),
-                  h(AlertDialogFooter, null,
-                    h(AlertDialogCancel, null, "Annuler"),
-                    h(AlertDialogAction, { onClick: () => handleDeleteFloor(f.id, c.id) }, "Supprimer")
+                expandedCliniqueIds.has(c.id) ? h(ChevronDown, { className: "w-5 h-5 text-slate-400" }) : h(ChevronRight, { className: "w-5 h-5 text-slate-400" }),
+                h("div", null,
+                  h("div", { className: "text-xl font-bold text-slate-900" }, c.nom),
+                  h("div", { className: "text-sm text-slate-500 mt-0.5" }, 
+                    `${(c as any).adresse ?? ""} ${(c as any).ville ? `• ${(c as any).ville}` : ""}`
+                  )
+                )
+              ),
+              h("div", { className: "flex gap-2" },
+                h(Button, { 
+                  size: "sm", 
+                  variant: "outline", 
+                  onClick: (e: React.MouseEvent) => { 
+                    e.stopPropagation(); 
+                    openEditModal("clinique", c); 
+                  }, 
+                  disabled: loading 
+                }, h(Edit, { className: "w-4 h-4" })),
+
+                h(AlertDialog, {},
+                  h(AlertDialogTrigger, { asChild: true },
+                    h(Button, { 
+                      size: "sm", 
+                      variant: "destructive", 
+                      onClick: (e: React.MouseEvent) => e.stopPropagation(), 
+                      disabled: loading 
+                    }, h(Trash2, { className: "w-4 h-4" }))
+                  ),
+                  h(AlertDialogContent, null,
+                    h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer la clinique")),
+                    h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer la clinique "${c.nom}" ?`),
+                    h(AlertDialogFooter, null,
+                      h(AlertDialogCancel, null, "Annuler"),
+                      h(AlertDialogAction, { onClick: () => handleDeleteClinique(c.id) }, "Supprimer")
+                    )
                   )
                 )
               )
             )
           ),
 
-          expandedFloorIds.has(f.id) && h("div", { className: "pl-6 mt-2" },
-            h("div", { className: "flex gap-2 items-center mb-2" },
+          // Floors area
+          expandedCliniqueIds.has(c.id) && h(CardContent, { className: "p-6" },
+            h("div", { className: "flex gap-2 items-center mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200" },
+              h(Layers, { className: "w-5 h-5 text-blue-600" }),
+              h("span", { className: "font-medium text-sm" }, "Ajouter un étage:"),
               h(Input, {
-                placeholder: "Nom du service",
-                value: serviceInputs[f.id] ?? "",
-                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setServiceInputs((p) => ({ ...p, [f.id]: e.target.value })),
-                className: "max-w-sm"
+                placeholder: "Niveau (0, 1, 2...)",
+                value: floorInputs[c.id] ?? "",
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value;
+                  if (val === "" || /^-?\d*$/.test(val)) {
+                    setFloorInputs((p) => ({ ...p, [c.id]: val }));
+                  }
+                },
+                className: "max-w-xs",
+                type: "number",
+                step: 1,
+                min: -5
               }),
-              h(Button, { size: "sm", onClick: () => handleAddServiceQuick(f.id), disabled: loading }, h(Plus, { className: "w-4 h-4 mr-1" }), "Ajouter service"),
-              h(Button, { size: "sm", variant: "outline", onClick: () => openCreateModal("service", f.id), disabled: loading }, h(Edit, { className: "w-4 h-4 mr-1" }), "Modal service")
+              h(Button, { 
+                size: "sm", 
+                onClick: () => handleAddFloorQuick(c.id), 
+                disabled: loading 
+              }, 
+                h(Plus, { className: "w-4 h-4 mr-1" }), 
+                "Ajouter"
+              )
             ),
 
-            (servicesMap[f.id] ?? []).length === 0 ? h("div", { className: "text-sm text-gray-500 ml-2" }, "Aucun service") :
-            (servicesMap[f.id] ?? []).map((s) => h("div", { key: s.id, className: "border-l pl-4 mb-2" },
-              h("div", { className: "flex items-center justify-between" },
-                h("div", { className: "flex items-center gap-3 cursor-pointer", onClick: () => loadCapteursForService(s.id) },
-                  h(ChevronRight, {}),
-                  h("div", null, s.nom)
-                ),
-                h("div", { className: "flex gap-2" },
-                  h(Button, { size: "sm", variant: "outline", onClick: () => openEditModal("service", { ...s, floor_id: f.id }, f.id), disabled: loading }, h(Edit, { className: "w-4 h-4" })),
-
-                  // AlertDialog for delete service
-                  h(AlertDialog, {},
-                    h(AlertDialogTrigger, { asChild: true },
-                      h(Button, { size: "sm", variant: "destructive", onClick: (e: React.MouseEvent) => e.stopPropagation(), disabled: loading }, h(Trash2, { className: "w-4 h-4" }))
-                    ),
-                    h(AlertDialogContent, null,
-                      h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer le service")),
-                      h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer le service "${s.nom}" ?`),
-                      h(AlertDialogFooter, null,
-                        h(AlertDialogCancel, null, "Annuler"),
-                        h(AlertDialogAction, { onClick: () => handleDeleteService(s.id, f.id) }, "Supprimer")
-                      )
-                    )
-                  )
+            (floorsMap[c.id] ?? []).length === 0 
+              ? h("div", { className: "text-center py-8 text-sm text-slate-500" }, 
+                  "Aucun étage. Ajoutez-en un."
                 )
-              ),
+              : h("div", { className: "space-y-3" },
+                  ...(floorsMap[c.id] ?? []).map((f) => h("div", { 
+                    key: f.id, 
+                    className: "border border-slate-200 rounded-lg p-4 bg-white hover:shadow-md transition-all" 
+                  },
+                    h("div", { className: "flex justify-between items-center" },
+                      h("div", { 
+                        className: "flex items-center gap-3 cursor-pointer flex-1", 
+                        onClick: () => loadServicesForFloor(f.id) 
+                      },
+                        h("div", { className: "p-2 rounded-lg bg-slate-100" },
+                          h(Layers, { className: "w-5 h-5 text-slate-600" })
+                        ),
+                        expandedFloorIds.has(f.id) 
+                          ? h(ChevronDown, { className: "w-4 h-4 text-slate-400" }) 
+                          : h(ChevronRight, { className: "w-4 h-4 text-slate-400" }),
+                        h("div", { className: "font-semibold text-slate-900" }, f.nom)
+                      ),
+                      h("div", { className: "flex gap-2" },
+                        h(Button, { 
+                          size: "sm", 
+                          variant: "outline", 
+                          onClick: (e: React.MouseEvent) => { 
+                            e.stopPropagation(); 
+                            openEditModal("floor", { ...f, clinique_id: c.id }, c.id); 
+                          }, 
+                          disabled: loading 
+                        }, h(Edit, { className: "w-4 h-4" })),
 
-              expandedServiceIds.has(s.id) && h("div", { className: "pl-6 mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2" },
-                (capteursMap[s.id] ?? []).length === 0 ? h("div", { className: "text-sm text-gray-500" }, "Aucun capteur") :
-                (capteursMap[s.id] ?? []).map((cap) => renderCap(cap))
-              )
-            ))
+                        h(AlertDialog, {},
+                          h(AlertDialogTrigger, { asChild: true },
+                            h(Button, { 
+                              size: "sm", 
+                              variant: "destructive", 
+                              onClick: (e: React.MouseEvent) => e.stopPropagation(), 
+                              disabled: loading 
+                            }, h(Trash2, { className: "w-4 h-4" }))
+                          ),
+                          h(AlertDialogContent, null,
+                            h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer l'étage")),
+                            h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer l'étage "${f.nom}" ?`),
+                            h(AlertDialogFooter, null,
+                              h(AlertDialogCancel, null, "Annuler"),
+                              h(AlertDialogAction, { onClick: () => handleDeleteFloor(f.id, c.id) }, "Supprimer")
+                            )
+                          )
+                        )
+                      )
+                    ),
+
+                    expandedFloorIds.has(f.id) && h("div", { className: "pl-6 mt-4 border-l-2 border-blue-200" },
+                      h("div", { className: "flex gap-2 items-center mb-3 p-3 bg-slate-50 rounded-lg" },
+                        h(Briefcase, { className: "w-4 h-4 text-blue-600" }),
+                        h("span", { className: "text-sm font-medium" }, "Service:"),
+                        h(Input, {
+                          placeholder: "Nom du service",
+                          value: serviceInputs[f.id] ?? "",
+                          onChange: (e: React.ChangeEvent<HTMLInputElement>) => 
+                            setServiceInputs((p) => ({ ...p, [f.id]: e.target.value })),
+                          className: "max-w-sm"
+                        }),
+                        h(Button, { 
+                          size: "sm", 
+                          onClick: () => handleAddServiceQuick(f.id), 
+                          disabled: loading 
+                        }, 
+                          h(Plus, { className: "w-4 h-4 mr-1" }), 
+                          "Ajouter"
+                        )
+                      ),
+
+                      (servicesMap[f.id] ?? []).length === 0 
+                        ? h("div", { className: "text-sm text-slate-500 ml-2 py-4" }, "Aucun service")
+                        : h("div", { className: "space-y-2" },
+                            ...(servicesMap[f.id] ?? []).map((s) => h("div", { 
+                              key: s.id, 
+                              className: "border border-slate-200 rounded-lg p-3 bg-white" 
+                            },
+                              h("div", { className: "flex items-center justify-between" },
+                                h("div", { 
+                                  className: "flex items-center gap-2 cursor-pointer flex-1", 
+                                  onClick: () => loadCapteursForService(s.id) 
+                                },
+                                  h(Briefcase, { className: "w-4 h-4 text-slate-600" }),
+                                  expandedServiceIds.has(s.id) 
+                                    ? h(ChevronDown, { className: "w-4 h-4 text-slate-400" }) 
+                                    : h(ChevronRight, { className: "w-4 h-4 text-slate-400" }),
+                                  h("div", { className: "font-medium text-slate-900" }, s.nom)
+                                ),
+                                h("div", { className: "flex gap-2" },
+                                  h(Button, { 
+                                    size: "sm", 
+                                    variant: "outline", 
+                                    onClick: () => openEditModal("service", { ...s, floor_id: f.id }, f.id), 
+                                    disabled: loading 
+                                  }, h(Edit, { className: "w-4 h-4" })),
+
+                                  h(AlertDialog, {},
+                                    h(AlertDialogTrigger, { asChild: true },
+                                      h(Button, { 
+                                        size: "sm", 
+                                        variant: "destructive", 
+                                        onClick: (e: React.MouseEvent) => e.stopPropagation(), 
+                                        disabled: loading 
+                                      }, h(Trash2, { className: "w-4 h-4" }))
+                                    ),
+                                    h(AlertDialogContent, null,
+                                      h(AlertDialogHeader, null, h(AlertDialogTitle, null, "Supprimer le service")),
+                                      h("div", { className: "mt-2" }, `Voulez-vous vraiment supprimer le service "${s.nom}" ?`),
+                                      h(AlertDialogFooter, null,
+                                        h(AlertDialogCancel, null, "Annuler"),
+                                        h(AlertDialogAction, { onClick: () => handleDeleteService(s.id, f.id) }, "Supprimer")
+                                      )
+                                    )
+                                  )
+                                )
+                              ),
+
+                              expandedServiceIds.has(s.id) && h("div", { className: "pl-4 mt-4" },
+                                (capteursMap[s.id] ?? []).length === 0 
+                                  ? h("div", { className: "text-center py-6" },
+                                      h(Activity, { className: "w-10 h-10 mx-auto text-slate-300 mb-2" }),
+                                      h("div", { className: "text-sm text-slate-500" }, "Aucun capteur")
+                                    )
+                                  : h("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-3" },
+                                      ...(capteursMap[s.id] ?? []).map((cap) => renderCap(cap))
+                                    )
+                              )
+                            ))
+                          )
+                    )
+                  ))
+                )
           )
         ))
       )
-    )),
+    ),
 
     // Modal
     h(EntityModal, {
       open: modalOpen,
       title: modalMode === "create" ? `Créer ${modalEntity}` : `Modifier ${modalEntity}`,
       fields: modalEntity === "clinique"
-        ? [{ name: "nom", label: "Nom", placeholder: "Nom clinique" }, { name: "adresse", label: "Adresse", placeholder: "Adresse" }, { name: "ville", label: "Ville", placeholder: "Ville" }]
+        ? [
+            { name: "nom", label: "Nom", placeholder: "Nom clinique" }, 
+            { name: "adresse", label: "Adresse", placeholder: "Adresse" }, 
+            { name: "ville", label: "Ville", placeholder: "Ville" }
+          ]
         : modalEntity === "floor"
-        ? [{ name: "niveau", label: "Niveau", placeholder: "0 pour Rez-de-chaussée, 1, 2, ...", type: "number" }, { name: "nom", label: "Nom (optionnel)", placeholder: "Laisser vide pour nom par défaut" }]
+        ? [
+            { name: "niveau", label: "Niveau", placeholder: "0 pour Rez-de-chaussée, 1, 2, ...", type: "number" }, 
+            { name: "nom", label: "Nom (optionnel)", placeholder: "Laisser vide pour nom par défaut" }
+          ]
         : modalEntity === "service"
-        ? [{ name: "nom", label: "Nom service", placeholder: "Nom service" }]
+        ? [
+            { name: "nom", label: "Nom service", placeholder: "Nom service" }
+          ]
         : [],
       initialData: modalInitial,
       onClose: () => setModalOpen(false),
-      onSave: async (payload: Record<string, any>) => { await handleModalSave(payload); setModalOpen(false); }
+      onSave: async (payload: Record<string, any>) => { 
+        await handleModalSave(payload); 
+        setModalOpen(false); 
+      }
     })
   );
 }
