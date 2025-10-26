@@ -1,10 +1,10 @@
 // frontend3/src/components/dashboard/dashboard-overview-user.tsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import SensorCard, { Sensor } from "./sensor-card";
 import AlertsPanelUser from "./alerts-panel-user";
 import ClinicOverview from "./clinic-overview";
-import { getSensorsByUser } from "../sensors/sensor-api";
+import { getSensorsByUser, getSensorsAlertCountsByUser, getSensorMesuresByUser } from "../sensors/sensor-api";
 import { getAlertesByUser } from "../alertes/alertes-api";
 import {
   ResponsiveContainer,
@@ -16,226 +16,265 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { Alerte as DomainAlerte } from "../../types/domain";
 
 interface DashboardOverviewUserProps {
   user: { id: number; email?: string } | null;
+  sensors?: Sensor[];
+  alertes?: any[];
   onShowSensorEvolution?: (sensorId: string | number) => void;
 }
 
 type PeriodOption = "1h" | "24h" | "7d" | "30d" | "custom";
 
-const DEBUG_MEASURES = true;
-
-function parseDateMesureLocal(raw: unknown): Date | null {
-  if (raw == null) return null;
-  if (raw instanceof Date) return raw;
-
-  const asNumber = Number(raw);
-  if (!Number.isNaN(asNumber)) {
-    const s = String(raw).trim();
-    if (/^\d{10}$/.test(s)) return new Date(asNumber * 1000);
-    return new Date(asNumber);
-  }
-
-  const str = String(raw).trim();
-  const d1 = new Date(str);
-  if (!isNaN(d1.getTime())) return d1;
-
-  const d2 = new Date(str.replace(" ", "T"));
-  if (!isNaN(d2.getTime())) return d2;
-
-  try {
-    const cleaned = str.replace(/(\.\d+)?$/, "");
-    const d3 = new Date(cleaned);
-    if (!isNaN(d3.getTime())) return d3;
-  } catch {}
-
-  return null;
-}
-
-function extractMesuresFromSensor(sensor: any): any[] {
-  if (!sensor) return [];
-  if (Array.isArray(sensor.mesures)) return sensor.mesures;
-  if (Array.isArray(sensor.measurements)) return sensor.measurements;
-  if (Array.isArray(sensor.readings)) return sensor.readings;
-  return [];
-}
-
 const startOfDayTs = (dateYMD: string) => new Date(`${dateYMD}T00:00:00`).getTime();
 const endOfDayTs = (dateYMD: string) => new Date(`${dateYMD}T23:59:59.999`).getTime();
 
-export function DashboardOverviewUser({ user, onShowSensorEvolution }: DashboardOverviewUserProps) {
-  const [sensors, setSensors] = useState<Sensor[]>([]);
+export function DashboardOverviewUser({ 
+  user,
+  sensors: propsSensors = [],
+  alertes: propsAlertes = [],
+  onShowSensorEvolution 
+}: DashboardOverviewUserProps) {
+  
+  // ========================================
+  // 📦 STATES
+  // ========================================
+  const [sensors, setSensors] = useState<Sensor[]>(Array.isArray(propsSensors) ? propsSensors : []);
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [chartPeriod, setChartPeriod] = useState<PeriodOption>("1h");
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
 
-  const [alertes, setAlertes] = useState<DomainAlerte[]>([]);
+  const [loadingSensors, setLoadingSensors] = useState<boolean>(false);
   const [alertesTotalsMap, setAlertesTotalsMap] = useState<Record<number, number>>({});
   const [alertesActiveMap, setAlertesActiveMap] = useState<Record<number, number>>({});
-  const [loadingSensors, setLoadingSensors] = useState(false);
-  const [loadingCounts, setLoadingCounts] = useState(false);
+  const [loadingAlertCounts, setLoadingAlertCounts] = useState<boolean>(false);
 
-  const selectedSensorMemo = useMemo(() => selectedSensor, [selectedSensor]);
+  const [sensorMesures, setSensorMesures] = useState<any[]>([]);
+  const [loadingMesures, setLoadingMesures] = useState<boolean>(false);
+  const [mesuresError, setMesuresError] = useState<string | null>(null);
 
-  const loadAll = useCallback(async () => {
+  const [fetchedAlertes, setFetchedAlertes] = useState<any[]>(Array.isArray(propsAlertes) ? propsAlertes : []);
+  const [loadingAlertes, setLoadingAlertes] = useState<boolean>(false);
+  const [alertesError, setAlertesError] = useState<string | null>(null);
+
+  // ========================================
+  // 🔒 REFS - Protection anti-double-chargement
+  // ========================================
+  const hasLoadedSensors = useRef(false);
+  const hasLoadedAlertCounts = useRef(false);
+
+  // ========================================
+  // 📊 COMPUTED
+  // ========================================
+  const isFullCapteurs = sensors.length > 0 && !!(sensors[0] as any)?.service?.floor?.clinique;
+  const alertes = propsAlertes && propsAlertes.length > 0 ? propsAlertes : fetchedAlertes;
+
+  // ========================================
+  // 📈 CHARGEMENT DES MESURES D'UN CAPTEUR
+  // ========================================
+  const loadSensorMesures = useCallback(async (
+    sensorId: number, 
+    period: PeriodOption, 
+    customFrom?: string, 
+    customTo?: string
+  ) => {
     if (!user?.id) return;
-    setLoadingSensors(true);
+    
+    setLoadingMesures(true);
+    setMesuresError(null);
+    
     try {
-      const rawSensors = await getSensorsByUser(user.id);
-      const normalized: any[] = Array.isArray(rawSensors) ? rawSensors : [];
-
-      const withMesures = normalized.map((s: any) => {
-        const rawMesures = extractMesuresFromSensor(s);
-        const mesuresWithTs = Array.isArray(rawMesures)
-          ? rawMesures.map((m: any) => {
-              const candidate = m?.date_mesure ?? m?.date ?? m?.created_at ?? m?.timestamp ?? null;
-              const d = parseDateMesureLocal(candidate);
-              const _ts = d ? d.getTime() : null;
-              return { ...m, _ts };
-            })
-          : [];
-        return { ...s, mesures: mesuresWithTs };
-      });
-
-      setSensors(withMesures as any);
-
-      setLoadingCounts(true);
-      try {
-        const rawAlertes = await getAlertesByUser(user.id);
-        const arr = Array.isArray(rawAlertes) ? rawAlertes : [];
-
-        const nowIso = new Date().toISOString();
-        const mapped = arr.map((a: any): DomainAlerte => ({
-          ...(a ?? {}),
-          created_at: a?.created_at ?? a?.createdAt ?? nowIso,
-          updated_at: a?.updated_at ?? a?.updatedAt ?? nowIso,
-        } as DomainAlerte));
-
-        setAlertes(mapped);
-
-        const totals: Record<number, number> = {};
-        const actives: Record<number, number> = {};
-        withMesures.forEach((s: any) => {
-          const sAlertes = mapped.filter((al) => Number((al as any).capteur_id) === Number(s.id));
-          totals[Number(s.id)] = sAlertes.length;
-          actives[Number(s.id)] = sAlertes.filter(
-            (al) =>
-              String(((al as any).statut ?? (al as any).status ?? "")).toLowerCase() === "actif" ||
-              String(((al as any).statut ?? (al as any).status ?? "")).toLowerCase() === "active"
-          ).length;
-        });
-        setAlertesTotalsMap((prev) => ({ ...prev, ...totals }));
-        setAlertesActiveMap((prev) => ({ ...prev, ...actives }));
-      } finally {
-        setLoadingCounts(false);
+      let options: any = {};
+      
+      switch (period) {
+        case "1h":
+          options.hours = 1;  // ✅ Charge seulement 1 heure
+          break;
+        case "24h":
+          options.hours = 24;  // ✅ Charge 24 heures
+          break;
+        case "7d":
+          options.days = 7;
+          break;
+        case "30d":
+          options.days = 30;
+          break;
+        case "custom":
+          if (customFrom && customTo) {
+            options.dateFrom = customFrom;
+            options.dateTo = customTo;
+          }
+          break;
       }
-    } catch (err) {
-      console.error("Erreur loadAll DashboardOverviewUser:", err);
-      setSensors([]);
-      setAlertes([]);
-      setAlertesTotalsMap({});
-      setAlertesActiveMap({});
+      
+      const response = await getSensorMesuresByUser(user.id, sensorId, options);
+      setSensorMesures(response.mesures || []);
+    } catch (err: any) {
+      console.error('Erreur loadSensorMesures:', err);
+      setMesuresError(err?.message ?? 'Erreur lors du chargement des mesures');
+      setSensorMesures([]);
     } finally {
-      setLoadingSensors(false);
+      setLoadingMesures(false);
+    }
+  }, [user]);
+
+  // 🔄 Recharger les mesures quand le capteur/période change
+  useEffect(() => {
+    if (selectedSensor) {
+      loadSensorMesures(
+        Number(selectedSensor.id), 
+        chartPeriod,
+        dateFrom ?? undefined,
+        dateTo ?? undefined
+      );
+    }
+  }, [selectedSensor, chartPeriod, dateFrom, dateTo, loadSensorMesures]);
+
+  // ========================================
+  // 🔢 CHARGEMENT DES COMPTEURS D'ALERTES (en arrière-plan)
+  // ========================================
+  const loadAlertCountsInBackground = useCallback(async (sensorsToLoad: Sensor[]) => {
+    if (!user?.id || sensorsToLoad.length === 0 || hasLoadedAlertCounts.current) return;
+    
+    setLoadingAlertCounts(true);
+    hasLoadedAlertCounts.current = true;
+    
+    try {
+      const sensorIds = sensorsToLoad.map(s => Number(s.id));
+      const countsMap = await getSensorsAlertCountsByUser(user.id, sensorIds);
+      
+      const newTotalsMap: Record<number, number> = {};
+      const newActivesMap: Record<number, number> = {};
+      
+      Object.entries(countsMap).forEach(([id, counts]) => {
+        const sensorId = Number(id);
+        newTotalsMap[sensorId] = counts.total_alertes;
+        newActivesMap[sensorId] = counts.active_alertes;
+      });
+      
+      setAlertesTotalsMap(newTotalsMap);
+      setAlertesActiveMap(newActivesMap);
+    } catch (err) {
+      console.error('Erreur getSensorsAlertCountsByUser:', err);
+      const fallbackMap: Record<number, number> = {};
+      sensorsToLoad.forEach(s => {
+        fallbackMap[Number(s.id)] = 0;
+      });
+      setAlertesTotalsMap(fallbackMap);
+      setAlertesActiveMap(fallbackMap);
+    } finally {
+      setLoadingAlertCounts(false);
+    }
+  }, [user]);
+
+  // ========================================
+  // 🎯 CHARGEMENT INITIAL DES CAPTEURS (1 fois)
+  // ========================================
+  useEffect(() => {
+    if (!user?.id || hasLoadedSensors.current) return;
+
+    const loadSensorsOnce = async () => {
+      setLoadingSensors(true);
+      
+      try {
+        let rawSensors: Sensor[];
+
+        if (propsSensors && propsSensors.length > 0) {
+          rawSensors = propsSensors;
+        } else {
+          rawSensors = await getSensorsByUser(user.id);
+        }
+        
+        const normalizedSensors = (rawSensors || []).map((sensor: any) => ({
+          ...sensor,
+          status: sensor.status === null ? undefined : sensor.status,
+          mesures: undefined,
+        }));
+        
+        setSensors(normalizedSensors);
+        hasLoadedSensors.current = true;
+        setLoadingSensors(false);
+        
+        if (normalizedSensors.length > 0) {
+          loadAlertCountsInBackground(normalizedSensors);
+        }
+      } catch (err) {
+        console.error("Erreur loadSensors:", err);
+        setSensors([]);
+        setLoadingSensors(false);
+      }
+    };
+
+    loadSensorsOnce();
+  }, [user, propsSensors, loadAlertCountsInBackground]);
+
+  // ========================================
+  // 🔄 RECHARGEMENT SUR CHANGEMENT DE PROPS
+  // ========================================
+  useEffect(() => {
+    if (propsSensors && propsSensors.length > 0 && hasLoadedSensors.current) {
+      const normalizedSensors = propsSensors.map((sensor: any) => ({
+        ...sensor,
+        status: sensor.status === null ? undefined : sensor.status,
+        mesures: undefined,
+      }));
+      setSensors(normalizedSensors);
+      
+      hasLoadedAlertCounts.current = false;
+      loadAlertCountsInBackground(normalizedSensors);
+    }
+  }, [propsSensors, loadAlertCountsInBackground]);
+
+  // ========================================
+  // 🚨 REFRESH DES ALERTES
+  // ========================================
+  const refreshAlertes = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoadingAlertes(true);
+      setAlertesError(null);
+      const data = await getAlertesByUser(user.id);
+      setFetchedAlertes(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error("Erreur refreshAlertes:", err);
+      setAlertesError(err?.message ?? "Erreur réseau");
+    } finally {
+      setLoadingAlertes(false);
     }
   }, [user]);
 
   useEffect(() => {
-    loadAll();
-    const interval = setInterval(loadAll, 30000);
-    return () => clearInterval(interval);
-  }, [loadAll]);
-
-  useEffect(() => {
-    if (!selectedSensor) return;
-    const found = sensors.find((s) => String(s.id) === String(selectedSensor.id));
-    if (!found) {
-      if (DEBUG_MEASURES) console.info("selectedSensor removed after refresh, clearing selection", selectedSensor.id);
-      setSelectedSensor(null);
-    } else if (found && found !== selectedSensor) {
-      setSelectedSensor(found as any);
-      if (DEBUG_MEASURES) console.info("selectedSensor re-synced to latest object", found.id);
+    if (user?.id && fetchedAlertes.length === 0 && !propsAlertes?.length) {
+      refreshAlertes();
     }
-  }, [sensors, selectedSensor]);
+  }, [user, refreshAlertes, fetchedAlertes.length, propsAlertes]);
 
-  const openChart = (idOrSensor: any) => {
-    if (idOrSensor == null) return;
-    const id = typeof idOrSensor === "object" ? idOrSensor.id ?? idOrSensor : idOrSensor;
-    const matched = sensors.find((s) => String(s.id) === String(id));
-    if (matched) {
-      setSelectedSensor(matched as any);
-    } else if (typeof idOrSensor === "object" && idOrSensor?.id != null) {
-      setSelectedSensor(idOrSensor as Sensor);
-    } else {
-      console.warn("openChart: sensor not found in sensors list", idOrSensor);
-      setSelectedSensor(null);
-    }
-    setChartPeriod("1h");
-    onShowSensorEvolution?.(id);
-  };
+  // ========================================
+  // 📊 FILTRAGE DES MESURES PAR PÉRIODE
+  // ========================================
+  const filterMeasuresByPeriod = useCallback(() => {
+    if (!sensorMesures || sensorMesures.length === 0) return [];
+    
+    // ✅ Les données sont déjà filtrées par le backend
+    // On ne fait que formatter et trier
+    return sensorMesures
+      .map(m => ({
+        date: m.date_mesure 
+          ? (m.date_mesure instanceof Date 
+              ? m.date_mesure.toLocaleString() 
+              : new Date(m.date_mesure).toLocaleString()) 
+          : String(m.id ?? ""),
+        value: typeof m.valeur === "number" ? m.valeur : Number(m.valeur || 0),
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [sensorMesures]);
 
-  const filterMeasuresByPeriod = useCallback(
-    (sensor: Sensor | null | undefined) => {
-      if (!sensor) return [];
-      const rawMesures: any[] = Array.isArray((sensor as any).mesures) ? (sensor as any).mesures : [];
-      if (rawMesures.length === 0) return [];
-
-      const nowTs = Date.now();
-      let startTs = nowTs - 24 * 60 * 60 * 1000;
-      let endTs = nowTs;
-
-      if (chartPeriod === "1h") startTs = nowTs - 60 * 60 * 1000;
-      else if (chartPeriod === "24h") startTs = nowTs - 24 * 60 * 60 * 1000;
-      else if (chartPeriod === "7d") startTs = nowTs - 7 * 24 * 60 * 60 * 1000;
-      else if (chartPeriod === "30d") startTs = nowTs - 30 * 24 * 60 * 60 * 1000;
-      else if (chartPeriod === "custom") {
-        if (dateFrom && dateTo) {
-          startTs = startOfDayTs(dateFrom);
-          endTs = endOfDayTs(dateTo);
-          if (startTs > endTs) {
-            const tmp = startTs;
-            startTs = endTs;
-            endTs = tmp;
-          }
-        } else {
-          return [];
-        }
-      }
-
-      const parsed = rawMesures.map((m: any) => {
-        const tsFromField = typeof m._ts === "number" ? m._ts : null;
-        if (tsFromField) return { ts: tsFromField, value: Number(m.valeur ?? m.value ?? 0), raw: m };
-        const candidate = m?.date_mesure ?? m?.date ?? m?.created_at ?? m?.timestamp ?? null;
-        const d = parseDateMesureLocal(candidate);
-        const ts = d ? d.getTime() : null;
-        return { ts, value: Number(m.valeur ?? m.value ?? 0), raw: m };
-      });
-
-      const inside = parsed
-        .filter((p: any) => p && typeof p.ts === "number" && !Number.isNaN(p.ts) && p.ts >= startTs && p.ts <= endTs)
-        .sort((a: any, b: any) => a.ts - b.ts)
-        .map((p: any) => ({ date: new Date(p.ts).toLocaleString(), value: p.value }));
-
-      if (DEBUG_MEASURES) {
-        const parsedAll = parsed.filter((p) => p && typeof p.ts === "number") as any[];
-        const outside = parsedAll.filter((p) => p.ts < startTs || p.ts > endTs);
-        console.group(`[filterMeasuresByPeriod] sensor ${sensor.id} — period ${chartPeriod}`);
-        console.log("raw count:", rawMesures.length);
-        console.log("parsed:", parsedAll.length);
-        console.log("inside:", inside.length, inside.slice(0, 10));
-        if (outside.length > 0) console.log("outside sample:", outside.slice(0, 10));
-        console.groupEnd();
-      }
-
-      return inside;
-    },
-    [chartPeriod, dateFrom, dateTo]
-  );
-
+  // ========================================
+  // 🎨 UI CONSTANTS
+  // ========================================
   const PERIODS: { key: PeriodOption; label: string }[] = [
     { key: "1h", label: "1h" },
     { key: "24h", label: "24h" },
@@ -244,16 +283,14 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
     { key: "custom", label: "Personnalisé" },
   ];
 
-  const totalActiveAlerts = alertes.filter((a) => {
-    const s = String(((a as any).statut ?? (a as any).status ?? "")).toLowerCase();
-    return s === "actif" || s === "active";
-  }).length;
-
+  // ========================================
+  // 🎨 RENDER
+  // ========================================
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">Vue d'ensemble utilisateur</h2>
-        <p className="text-muted-foreground">Vos capteurs et alertes — actives : {totalActiveAlerts}</p>
+        <p className="text-muted-foreground">Vos capteurs et données en temps réel</p>
       </div>
 
       <Tabs defaultValue="evolution" className="space-y-4">
@@ -264,14 +301,17 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
         </TabsList>
 
         <TabsContent value="evolution">
-          {selectedSensorMemo ? (
+          {selectedSensor ? (
             <div className="space-y-4">
-              {/* ✅ Barre de contrôle professionnelle */}
+              {/* Barre de contrôle */}
               <div className="bg-white border rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setSelectedSensor(null)}
+                    onClick={() => {
+                      setSelectedSensor(null);
+                      setSensorMesures([]);
+                    }}
                     className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
                   >
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,20 +367,20 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                 )}
               </div>
 
-              {/* ✅ Carte graphique professionnelle */}
+              {/* Graphique */}
               <div className="bg-white border rounded-lg p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h4 className="text-lg font-semibold text-gray-900">
-                      {selectedSensorMemo?.matricule ?? `Capteur #${selectedSensorMemo?.id}`}
+                      {selectedSensor?.matricule ?? `Capteur #${selectedSensor?.id}`}
                     </h4>
                     <p className="text-sm text-gray-500 mt-1">
                       {(() => {
-                        const famille = (selectedSensorMemo as any)?.famille?.famille || 
-                                       (selectedSensorMemo as any)?.famille?.type?.type || 
-                                       (selectedSensorMemo as any)?.famille?.nom;
-                        const type = (selectedSensorMemo as any)?.famille?.type?.type || 
-                                    (selectedSensorMemo as any)?.type;
+                        const famille = (selectedSensor as any)?.famille?.famille || 
+                                       (selectedSensor as any)?.famille?.type?.type || 
+                                       (selectedSensor as any)?.famille?.nom;
+                        const type = (selectedSensor as any)?.famille?.type?.type || 
+                                    (selectedSensor as any)?.type;
                         
                         const parts = [];
                         if (famille) parts.push(`Famille: ${famille}`);
@@ -349,23 +389,23 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                         
                         return parts.join(" • ");
                       })()}
-                      {(selectedSensorMemo?.seuil_min != null || selectedSensorMemo?.seuil_max != null) && (
-                        <> • Plage: {selectedSensorMemo?.seuil_min ?? "—"} - {selectedSensorMemo?.seuil_max ?? "—"}</>
+                      {(selectedSensor?.seuil_min != null || selectedSensor?.seuil_max != null) && (
+                        <> • Plage: {selectedSensor?.seuil_min ?? "—"} - {selectedSensor?.seuil_max ?? "—"}</>
                       )}
                     </p>
                   </div>
-                  {(selectedSensorMemo?.seuil_max != null || selectedSensorMemo?.seuil_min != null) && (
+                  {(selectedSensor?.seuil_max != null || selectedSensor?.seuil_min != null) && (
                     <div className="flex items-center space-x-4 text-sm">
-                      {selectedSensorMemo?.seuil_max != null && (
+                      {selectedSensor?.seuil_max != null && (
                         <div className="flex items-center">
                           <div className="w-8 h-0.5 bg-red-500 mr-2"></div>
-                          <span className="text-gray-600">Seuil max: {selectedSensorMemo.seuil_max}</span>
+                          <span className="text-gray-600">Seuil max: {selectedSensor.seuil_max}</span>
                         </div>
                       )}
-                      {selectedSensorMemo?.seuil_min != null && (
+                      {selectedSensor?.seuil_min != null && (
                         <div className="flex items-center">
                           <div className="w-8 h-0.5 bg-green-500 mr-2"></div>
-                          <span className="text-gray-600">Seuil min: {selectedSensorMemo.seuil_min}</span>
+                          <span className="text-gray-600">Seuil min: {selectedSensor.seuil_min}</span>
                         </div>
                       )}
                     </div>
@@ -373,7 +413,22 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                 </div>
 
                 <div className="mt-4">
-                  {filterMeasuresByPeriod(selectedSensorMemo).length === 0 ? (
+                  {loadingMesures ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                      <svg className="animate-spin h-8 w-8 text-blue-600 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <p className="text-sm font-medium">Chargement des mesures...</p>
+                    </div>
+                  ) : mesuresError ? (
+                    <div className="flex flex-col items-center justify-center py-16">
+                      <svg className="w-12 h-12 text-red-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-red-600 font-medium">{mesuresError}</p>
+                    </div>
+                  ) : filterMeasuresByPeriod().length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16">
                       <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -387,7 +442,7 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                   ) : (
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart
-                        data={filterMeasuresByPeriod(selectedSensorMemo)}
+                        data={filterMeasuresByPeriod()}
                         margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" />
@@ -401,17 +456,17 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                           strokeWidth={2} 
                           dot={{ r: 3 }} 
                         />
-                        {selectedSensorMemo?.seuil_max != null && (
+                        {selectedSensor?.seuil_max != null && (
                           <ReferenceLine 
-                            y={selectedSensorMemo.seuil_max} 
+                            y={selectedSensor.seuil_max} 
                             stroke="red" 
                             strokeDasharray="4 4" 
                             label={{ value: "Seuil max", position: "right", fill: "red" }}
                           />
                         )}
-                        {selectedSensorMemo?.seuil_min != null && (
+                        {selectedSensor?.seuil_min != null && (
                           <ReferenceLine 
-                            y={selectedSensorMemo.seuil_min} 
+                            y={selectedSensor.seuil_min} 
                             stroke="green" 
                             strokeDasharray="4 4" 
                             label={{ value: "Seuil min", position: "right", fill: "green" }}
@@ -434,19 +489,33 @@ export function DashboardOverviewUser({ user, onShowSensorEvolution }: Dashboard
                   Aucun capteur trouvé.
                 </div>
               ) : (
-                sensors.map((sensor) => (
-                  <SensorCard
-                    key={String(sensor.id)}
-                    sensor={sensor}
-                    alertesCount={loadingCounts ? undefined : alertesActiveMap[Number(sensor.id)] ?? 0}
-                    totalAlertes={loadingCounts ? undefined : alertesTotalsMap[Number(sensor.id)] ?? 0}
-                    showFullHierarchy={true}
-                    showEvolution
-                    onShowChart={(idOrSensor) => {
-                      openChart(idOrSensor);
-                    }}
-                  />
-                ))
+                sensors.map((sensor) => {
+                  const sensorId = Number(sensor.id);
+                  return (
+                    <SensorCard
+                      key={String(sensor.id)}
+                      sensor={sensor}
+                      showFullHierarchy={isFullCapteurs}
+                      alertesCount={
+                        loadingAlertCounts 
+                          ? undefined 
+                          : alertesActiveMap[sensorId] ?? 0
+                      }
+                      totalAlertes={
+                        loadingAlertCounts 
+                          ? undefined 
+                          : alertesTotalsMap[sensorId] ?? 0
+                      }
+                      showEvolution
+                      onShowChart={id => {
+                        const s = sensors.find(x => String(x.id) === String(id)) || sensor;
+                        setSelectedSensor(s as Sensor);
+                        setSensorMesures([]);
+                        onShowSensorEvolution?.(id);
+                      }}
+                    />
+                  );
+                })
               )}
             </div>
           )}

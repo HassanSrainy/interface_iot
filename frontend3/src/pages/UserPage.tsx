@@ -1,26 +1,78 @@
-// src/pages/UserPage.tsx
-import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import useAuth from "../hooks/useAuth";
 import UserNavbar from "../components/layout/UserNavbar";
-
-
 import { DashboardOverviewUser } from "../components/dashboard/dashboard-overview-user";
 import { SensorManagementUser } from "../components/sensors/sensor-management-user";
 import { CliniqueManagementUser } from "../components/cliniques/clinique-management-user";
 import { AlertesManagementUser } from "../components/alertes/alertes-management-user";
+import { getUserNavbarStats } from "../components/utilisateurs/utilisateurs-api"; // ✅ Import de la nouvelle fonction
 
-/**
- * Page utilisateur (UI restreinte)
- * - utilise la UserNavbar
- * - n'affiche pas l'onglet "Utilisateurs"
- */
 export default function UserPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // wrapper pour logout + redirection
+  // ========================================
+  // 📊 ÉTATS POUR LA NAVBAR
+  // ========================================
+  const [sensorsCount, setSensorsCount] = useState(0);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [alertsCount, setAlertsCount] = useState(0);
+  const [navbarLoading, setNavbarLoading] = useState(true);
+
+  // ========================================
+  // 🔒 PROTECTION ANTI-DOUBLE-CHARGEMENT
+  // ========================================
+  const hasLoadedNavbarData = useRef(false);
+
+  // ========================================
+  // 📡 CHARGEMENT DES STATS NAVBAR (ultra-rapide)
+  // ========================================
+  useEffect(() => {
+    if (!user?.id || hasLoadedNavbarData.current) return;
+
+    let mounted = true;
+    hasLoadedNavbarData.current = true;
+
+    const fetchNavbarStats = async () => {
+      setNavbarLoading(true);
+      try {
+        // ✅ Un seul appel API léger au lieu de 2 lourds !
+        const stats = await getUserNavbarStats(user.id);
+
+        if (!mounted) return;
+
+        setSensorsCount(stats.sensors_count || 0);
+        setOnlineCount(stats.online_count || 0);
+        setAlertsCount(stats.alerts_count || 0);
+      } catch (error) {
+        console.error("Erreur lors du chargement des stats navbar :", error);
+        setSensorsCount(0);
+        setOnlineCount(0);
+        setAlertsCount(0);
+      } finally {
+        if (mounted) setNavbarLoading(false);
+      }
+    };
+
+    fetchNavbarStats();
+
+    // ✅ Refresh périodique (toutes les 30s)
+    const interval = setInterval(() => {
+      if (!mounted) return;
+      fetchNavbarStats();
+    }, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  // ========================================
+  // 🚪 LOGOUT
+  // ========================================
   const handleLogout = async () => {
     try {
       await logout();
@@ -29,7 +81,9 @@ export default function UserPage() {
     }
   };
 
-  // si user devient null, redirect (sécurité)
+  // ========================================
+  // 🔐 PROTECTION : Redirect si pas connecté
+  // ========================================
   useEffect(() => {
     if (user === null) {
       navigate("/login", { replace: true });
@@ -38,8 +92,15 @@ export default function UserPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col">
-      {/* Navbar spécifique utilisateur */}
-      <UserNavbar user={user} onLogout={handleLogout} />
+      {/* ✅ Navbar avec données en props */}
+      <UserNavbar 
+        user={user}
+        onLogout={handleLogout}
+        sensorsCount={sensorsCount}
+        onlineCount={onlineCount}
+        alertsCount={alertsCount}
+        loading={navbarLoading}
+      />
 
       <main className="container mx-auto px-4 py-6 flex-1">
         <Tabs defaultValue="dashboard" className="space-y-4">
@@ -48,19 +109,14 @@ export default function UserPage() {
             <TabsTrigger value="sensors">Capteurs</TabsTrigger>
             <TabsTrigger value="cliniques">Cliniques</TabsTrigger>
             <TabsTrigger value="alertes">Alertes</TabsTrigger>
-            {/* NOTE : pas d'onglet "users" pour les comptes non-admin */}
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-4">
-            {/* Passe les props nécessaires au composant user (adapter selon ta prop shape) */}
-            <DashboardOverviewUser
-              // si tu as besoin de props, ajoute-les ici ; sinon adapte le composant
-              user={user}
-            />
+            <DashboardOverviewUser user={user} />
           </TabsContent>
 
           <TabsContent value="sensors" className="space-y-4">
-            <SensorManagementUser  />
+            <SensorManagementUser />
           </TabsContent>
 
           <TabsContent value="cliniques" className="space-y-4">
@@ -71,8 +127,6 @@ export default function UserPage() {
             <AlertesManagementUser />
           </TabsContent>
         </Tabs>
-
-    
       </main>
     </div>
   );

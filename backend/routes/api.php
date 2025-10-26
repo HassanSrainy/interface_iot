@@ -10,17 +10,21 @@ use App\Http\Controllers\AlerteController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FamilleController;
-use Illuminate\Http\Request;
 use App\Http\Controllers\TypeController;
 
+// ============================================
+// AUTHENTIFICATION
+// ============================================
 Route::post('/login', [AuthController::class, 'login']);
 
-// Routes protégées par token
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/user', fn(\Illuminate\Http\Request $request) => $request->user());
 });
 
-
+// ============================================
+// RESOURCES STANDARDS
+// ============================================
 Route::apiResource('cliniques', CliniqueController::class);
 Route::apiResource('floors', FloorController::class);
 Route::apiResource('services', ServiceController::class);
@@ -31,32 +35,34 @@ Route::apiResource('users', UserController::class);
 Route::apiResource('familles', FamilleController::class);
 Route::apiResource('types', TypeController::class);
 
-// Nested routes pour relations
-Route::get('/cliniques/{clinique}/floors', [App\Http\Controllers\FloorController::class, 'byClinique']);
-Route::get('/floors/{floor}/services', [App\Http\Controllers\ServiceController::class, 'byFloor']);
-// routes/api.php
+// ============================================
+// ROUTES IMBRIQUÉES (NESTED)
+// ============================================
+Route::get('/cliniques/{clinique}/floors', [FloorController::class, 'byClinique']);
+Route::get('/cliniques/{clinique}/services', [CliniqueController::class, 'getServicesByClinique']);
+Route::get('/cliniques/{clinique}/summary', [CliniqueController::class, 'summaryByClinique']);
+Route::get('/cliniques/{clinique}/alertes', [CliniqueController::class, 'alertesParClinique']);
+
+Route::get('/floors/{floor}/services', [ServiceController::class, 'byFloor']);
+
+// ============================================
+// ROUTES CAPTEURS
+// ============================================
 Route::get('/capteurs/{id}/alertes/nbr', [CapteurController::class, 'alertesCount']);
-// routes/api.php
 Route::get('/capteurs/alertes/nbr', [CapteurController::class, 'alertesCountBatch']);
-// routes/api.php
 Route::get('/capteurs/{id}/mesures', [CapteurController::class, 'mesures']);
 
-Route::get('/cliniques/{clinique}/summary', [CliniqueController::class, 'summaryByClinique']); // résumé par clinique
-Route::get('/cliniques/{clinique}/alertes', [CliniqueController::class, 'alertesParClinique']); // si déjà présent
-// routes/api.php
-Route::get('/cliniques/{id}/services', [CliniqueController::class, 'getServicesByClinique']);
-//cliniques d'un user
-
+// ============================================
+// ROUTES UTILISATEUR
+// ============================================
 Route::get('/users/{id}/cliniques', [CliniqueController::class, 'cliniquesByUser']);
+Route::get('/users/{userId}/capteurs', [CapteurController::class, 'capteursByCliniqueUser']);
+Route::get('/users/{userId}/alertes', [AlerteController::class, 'alertesByCliniqueUser']);
+Route::get('/users/{userId}/navbar-stats', [UserController::class, 'getNavbarStats']);
 
-    // Capteurs appartenant aux cliniques de cet utilisateur
-Route::get('/users/{id}/capteurs', [CapteurController::class, 'capteursByCliniqueUser']);
+// ✅ ROUTES ALERTES PAR UTILISATEUR
+Route::get('/users/{userId}/capteurs/{capteurId}/alertes/nbr', [CapteurController::class, 'alertesCountByUser']);
+Route::get('/users/{userId}/capteurs/alertes/nbr', [CapteurController::class, 'alertesCountBatchByUser']);
 
-    // Alertes appartenant aux cliniques de cet utilisateur
-Route::get('/users/{id}/alertes', [AlerteController::class, 'alertesByCliniqueUser']);
-
-
-Route::middleware('auth:sanctum')->get('/user', function (\Illuminate\Http\Request $request) {
-    return $request->user();
-});
-
+// ✅ ROUTES MESURES PAR UTILISATEUR (CRITIQUE - CELLE QUI MANQUAIT)
+Route::get('/users/{userId}/capteurs/{capteurId}/mesures', [CapteurController::class, 'getMesuresByUser']);

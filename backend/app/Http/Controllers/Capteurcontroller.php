@@ -6,6 +6,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Capteur;
 use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
 class CapteurController extends Controller
 {
     /**
@@ -242,6 +245,175 @@ public function capteursByCliniqueUser($userId)
     ->get();
 
     return response()->json($capteurs, 200);
+}
+/**
+ * ✅ Compteur d'alertes pour un capteur spécifique d'un utilisateur
+ */
+public function alertesCountByUser($userId, $capteurId)
+{
+    $user = User::find($userId);
+
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur introuvable'], 404);
+    }
+
+    // Récupérer les ID des cliniques de l'utilisateur via la relation many-to-many
+    $cliniqueIds = $user->cliniques()->pluck('cliniques.id');
+
+    // Vérifier que le capteur appartient bien à une clinique de l'utilisateur
+    $capteur = Capteur::whereHas('service.floor', function ($query) use ($cliniqueIds) {
+        $query->whereIn('clinique_id', $cliniqueIds);
+    })->find($capteurId);
+
+    if (!$capteur) {
+        return response()->json(['message' => 'Capteur non trouvé ou accès refusé'], 404);
+    }
+
+    $totalAlertes = $capteur->alertes()->count();
+    $activeAlertes = $capteur->alertes()
+        ->whereIn('statut', ['actif', 'active'])
+        ->count();
+
+    return response()->json([
+        'capteur_id' => (int) $capteurId,
+        'total_alertes' => $totalAlertes,
+        'active_alertes' => $activeAlertes
+    ]);
+}
+
+/**
+ * ✅ Compteurs d'alertes en batch pour les capteurs d'un utilisateur
+ */
+public function alertesCountBatchByUser(Request $request, $userId)
+{
+    $user = User::find($userId);
+
+    if (!$user) {
+        return response()->json(['message' => 'Utilisateur introuvable'], 404);
+    }
+
+    // Récupérer les ID des cliniques de l'utilisateur via la relation many-to-many
+    $cliniqueIds = $user->cliniques()->pluck('cliniques.id');
+
+    // Récupérer les IDs de capteurs depuis le query param (optionnel)
+    $requestedIds = $request->has('ids') 
+        ? explode(',', $request->input('ids')) 
+        : null;
+
+    // Base query: capteurs appartenant aux cliniques de l'utilisateur
+    $query = Capteur::whereHas('service.floor', function ($q) use ($cliniqueIds) {
+        $q->whereIn('clinique_id', $cliniqueIds);
+    });
+
+    // Filtrer par IDs spécifiques si fournis
+    if ($requestedIds && count($requestedIds) > 0) {
+        $query->whereIn('id', $requestedIds);
+    }
+
+    $capteurs = $query->with(['alertes' => function ($q) {
+        $q->select('id', 'capteur_id', 'statut');
+    }])->get(['id']);
+
+    $result = [];
+    foreach ($capteurs as $capteur) {
+        $totalAlertes = $capteur->alertes->count();
+        $activeAlertes = $capteur->alertes
+            ->whereIn('statut', ['actif', 'active'])
+            ->count();
+
+        $result[(string) $capteur->id] = [
+            'total_alertes' => $totalAlertes,
+            'active_alertes' => $activeAlertes
+        ];
+    }
+
+    return response()->json($result);
+}
+public function getMesuresByUser(Request $request, $userId, $sensorId)
+{
+    try {
+        // Vérifier que le capteur appartient à l'utilisateur
+        $cliniqueIds = DB::table('clinique_user')
+            ->where('user_id', $userId)
+            ->pluck('clinique_id')
+            ->toArray();
+        
+        if (empty($cliniqueIds)) {
+            return response()->json(['mesures' => []]);
+        }
+        
+        $floorIds = DB::table('floors')
+            ->whereIn('clinique_id', $cliniqueIds)
+            ->pluck('id')
+            ->toArray();
+        
+        if (empty($floorIds)) {
+            return response()->json(['mesures' => []]);
+        }
+        
+        $serviceIds = DB::table('services')
+            ->whereIn('floor_id', $floorIds)
+            ->pluck('id')
+            ->toArray();
+        
+        if (empty($serviceIds)) {
+            return response()->json(['mesures' => []]);
+        }
+        
+        // Vérifier que le capteur existe et appartient aux services de l'utilisateur
+        $capteurExists = DB::table('capteurs')
+            ->where('id', $sensorId)
+            ->whereIn('service_id', $serviceIds)
+            ->exists();
+        
+        if (!$capteurExists) {
+            return response()->json([
+                'error' => 'Capteur non trouvé ou accès refusé'
+            ], 403);
+        }
+        
+        // Construire la requête des mesures
+        $query = DB::table('mesures')
+            ->where('capteur_id', $sensorId)
+            ->orderBy('date_mesure', 'desc');
+        
+        // ✅ Gestion des périodes
+        if ($request->has('hours')) {
+            $hours = (int) $request->input('hours');
+            $startDate = Carbon::now()->subHours($hours);
+            $query->where('date_mesure', '>=', $startDate);
+        } 
+        elseif ($request->has('days')) {
+            $days = (int) $request->input('days');
+            $startDate = Carbon::now()->subDays($days);
+            $query->where('date_mesure', '>=', $startDate);
+        } 
+        elseif ($request->has('dateFrom') && $request->has('dateTo')) {
+            $startDate = Carbon::parse($request->input('dateFrom'))->startOfDay();
+            $endDate = Carbon::parse($request->input('dateTo'))->endOfDay();
+            $query->whereBetween('date_mesure', [$startDate, $endDate]);
+        }
+        
+        // Limiter le nombre de résultats pour éviter la surcharge
+        $limit = $request->input('limit', 1000);
+        $mesures = $query->limit($limit)->get();
+        
+        return response()->json([
+            'mesures' => $mesures
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('Erreur getMesuresByUser:', [
+            'user_id' => $userId,
+            'sensor_id' => $sensorId,
+            'error' => $e->getMessage(),
+        ]);
+        
+        return response()->json([
+            'error' => 'Erreur lors du chargement des mesures',
+            'mesures' => []
+        ], 500);
+    }
 }
 
     

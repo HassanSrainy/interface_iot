@@ -1,10 +1,10 @@
 // frontend3/src/components/sensors/sensor-api.ts
-import api from '../../api/axios'; // adapte si nécessaire
+import api from '../../api/axios';
 
-// Types exportés directement depuis ce fichier
+// Types exportés
 export interface Alerte {
   id: number;
-  status: string; // "actif" | "inactif"
+  status: string;
   lue: boolean;
   message?: string;
   date_creation?: string;
@@ -12,7 +12,7 @@ export interface Alerte {
 
 export interface Mesure {
   id?: number;
-  date_mesure?: string; // format venant du backend (on normalisera côté front)
+  date_mesure?: string;
   valeur?: number;
   [k: string]: any;
 }
@@ -24,7 +24,7 @@ export interface Sensor {
   label?: string;
   status?: "online" | "offline" | null;
   alertes?: Alerte[];
-  mesures?: Mesure[]; // IMPORTANT : la propriété attendue côté front
+  mesures?: Mesure[];
   derniereMesure?: Mesure | null;
   [k: string]: any;
 }
@@ -35,7 +35,21 @@ export interface SensorAlertCount {
   active_alertes: number;
 }
 
-// Fonctions API
+export interface AlertCountMap {
+  [capteurId: number]: {
+    total_alertes: number;
+    active_alertes: number;
+  };
+}
+
+export interface MesuresResponse {
+  capteur_id: number;
+  mesures: Mesure[];
+  count: number;
+}
+
+// ===== FONCTIONS DE BASE =====
+
 export const getSensors = async (): Promise<Sensor[]> => {
   const res = await api.get('/capteurs');
   return res.data;
@@ -55,17 +69,10 @@ export const deleteSensor = async (id: number): Promise<void> => {
   await api.delete(`/capteurs/${id}`);
 };
 
-// frontend3/src/components/sensors/sensor-api.ts
-
-export interface AlertCountMap {
-  [capteurId: number]: {
-    total_alertes: number;
-    active_alertes: number;
-  };
-}
+// ===== COMPTEURS D'ALERTES =====
 
 /**
- * Récupère les compteurs d'alertes pour plusieurs capteurs en une seule requête
+ * ✅ Récupère les compteurs d'alertes pour plusieurs capteurs en une seule requête
  */
 export const getSensorsAlertCounts = async (sensorIds?: number[]): Promise<AlertCountMap> => {
   const params = sensorIds && sensorIds.length > 0 
@@ -76,29 +83,54 @@ export const getSensorsAlertCounts = async (sensorIds?: number[]): Promise<Alert
   return res.data;
 };
 
-// --- ajout : récupérer les capteurs d'un utilisateur (utilise l'API axios 'api')
+/**
+ * ✅ Récupère le compteur d'alertes pour un capteur d'un utilisateur
+ */
+export const getSensorAlertCountByUser = async (
+  userId: number, 
+  sensorId: number
+): Promise<SensorAlertCount> => {
+  const res = await api.get(`/users/${userId}/capteurs/${sensorId}/alertes/nbr`);
+  return res.data;
+};
+
+/**
+ * ✅ Récupère les compteurs d'alertes pour plusieurs capteurs d'un utilisateur
+ */
+export const getSensorsAlertCountsByUser = async (
+  userId: number,
+  sensorIds?: number[]
+): Promise<AlertCountMap> => {
+  const params = sensorIds && sensorIds.length > 0 
+    ? { ids: sensorIds.join(',') } 
+    : {};
+  
+  const res = await api.get(`/users/${userId}/capteurs/alertes/nbr`, { params });
+  return res.data;
+};
+
+// ===== CAPTEURS PAR UTILISATEUR =====
+
+/**
+ * ✅ Récupère les capteurs d'un utilisateur
+ */
 export const getSensorsByUser = async (userId: number): Promise<Sensor[]> => {
   const res = await api.get(`/users/${userId}/capteurs`);
   return res.data;
 };
 
-// --- ajout : récupérer capteurs par service (optionnel)
+/**
+ * ✅ Récupère les capteurs par service (optionnel)
+ */
 export const getSensorsByService = async (serviceId: number): Promise<Sensor[]> => {
   const res = await api.get(`/services/${serviceId}/capteurs`);
   return res.data;
 };
 
-// --- ajout optionnel : récupérer mesures d'un capteur (si nécessaire)
-// frontend3/src/components/sensors/sensor-api.ts
-
-export interface MesuresResponse {
-  capteur_id: number;
-  mesures: Mesure[];
-  count: number;
-}
+// ===== MESURES =====
 
 /**
- * ✅ Récupérer les mesures d'un capteur spécifique avec filtres
+ * ✅ Récupérer les mesures d'un capteur spécifique avec filtres (ADMIN)
  */
 export const getSensorMesures = async (
   sensorId: number, 
@@ -117,5 +149,35 @@ export const getSensorMesures = async (
   if (options?.limit) params.limit = options.limit;
   
   const res = await api.get(`/capteurs/${sensorId}/mesures`, { params });
+  return res.data;
+};
+
+/**
+ * ✅ Récupérer les mesures d'un capteur spécifique pour un utilisateur
+ */
+/**
+ * ✅ Récupérer les mesures d'un capteur spécifique pour un utilisateur
+ * Supporte : hours, days, dateFrom/dateTo
+ */
+export const getSensorMesuresByUser = async (
+  userId: number,
+  sensorId: number, 
+  options?: {
+    hours?: number;      // ✅ NOUVEAU
+    days?: number;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }
+): Promise<MesuresResponse> => {
+  const params: any = {};
+  
+  if (options?.hours) params.hours = options.hours;  // ✅ NOUVEAU
+  if (options?.days) params.days = options.days;
+  if (options?.dateFrom) params.dateFrom = options.dateFrom;  // ✅ Corrigé (pas date_from)
+  if (options?.dateTo) params.dateTo = options.dateTo;        // ✅ Corrigé (pas date_to)
+  if (options?.limit) params.limit = options.limit;
+  
+  const res = await api.get(`/users/${userId}/capteurs/${sensorId}/mesures`, { params });
   return res.data;
 };
