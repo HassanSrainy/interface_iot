@@ -904,18 +904,18 @@ export function DashboardOverview({
             {/* Charts Row 3 - Area Chart for Clinics */}
             <div className="bg-white border rounded-lg p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Vue d'ensemble des Cliniques</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={350}>
                 <AreaChart
                   data={clinicsData
                     .map((c: any) => ({
-                      nom: c.nom?.length > 15 ? c.nom.substring(0, 15) + '...' : c.nom,
+                      nom: c.nom?.length > 20 ? c.nom.substring(0, 18) + '...' : c.nom,
                       capteurs: c.totalCapteurs || 0,
                       enLigne: c.capteursEnLigne || 0,
                       alertes: c.alertesActives || 0
                     }))
                     .slice(0, 10)
                   }
-                  margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  margin={{ top: 10, right: 30, left: 10, bottom: 60 }}
                 >
                   <defs>
                     <linearGradient id="colorCapteurs" x1="0" y1="0" x2="0" y2="1">
@@ -932,7 +932,14 @@ export function DashboardOverview({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="nom" />
+                  <XAxis 
+                    dataKey="nom" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={80}
+                    tick={{ fontSize: 12 }}
+                    interval={0}
+                  />
                   <YAxis />
                   <Tooltip />
                   <Legend />

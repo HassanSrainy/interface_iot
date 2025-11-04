@@ -5,7 +5,9 @@ export function useUsers() {
   return useQuery({
     queryKey: ['users'],
     queryFn: getUsers,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 

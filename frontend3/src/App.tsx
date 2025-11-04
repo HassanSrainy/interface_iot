@@ -16,15 +16,23 @@ export default function App() {
   // Rediriger vers login si user devient null
   useEffect(() => {
     if (user === null) {
+      console.log('App: User is null, redirecting to login');
       navigate("/login", { replace: true });
     }
   }, [user, navigate]);
+
+  const handleLogout = async () => {
+    console.log('App: Logout initiated');
+    await logout();
+    // Force immediate redirect
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50/50">
       <Navbar 
         user={user} 
-        onLogout={logout}  
+        onLogout={handleLogout}  
       />
 
       <main className="container mx-auto px-4 py-6">

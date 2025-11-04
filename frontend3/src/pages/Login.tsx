@@ -1,5 +1,5 @@
 // src/pages/LoginPage.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { login as apiLogin } from "../hooks/api-user"; // ton service API
 import { useAuth } from "../context/AuthProvider";
@@ -10,6 +10,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Wifi, AlertCircle } from "lucide-react";
+import api from "../api/axios";
 
 // Interface pour TypeScript (role optionnel car différentes APIs renvoient des formats différents)
 // Use the API response type (does not require a token for session-based auth)
@@ -23,6 +24,18 @@ export function LoginPage() {
   const navigate = useNavigate();
   const useAuthHook = useAuth();
   const location = useLocation();
+
+  // Nettoyer le localStorage au montage du composant
+  useEffect(() => {
+    console.log('LoginPage: Cleaning localStorage on mount');
+    try {
+      localStorage.removeItem('api_token');
+      localStorage.removeItem('user');
+      delete api.defaults.headers.common['Authorization'];
+    } catch (e) {
+      console.error('Failed to clean localStorage:', e);
+    }
+  }, []);
 
   // helper pour extraire un role lisible depuis la réponse
   const extractRole = (u: any): string | undefined => {
@@ -65,7 +78,31 @@ export function LoginPage() {
         navigate("/user/dashboard");
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || "Erreur lors de la connexion");
+      console.error('Login failed:', err);
+      
+      // Message d'erreur détaillé et en français
+      let errorMessage = "Erreur lors de la connexion";
+      
+      if (err.response?.data?.message) {
+        const backendMessage = err.response.data.message;
+        
+        // Traduire les messages courants
+        if (backendMessage === "Invalid credentials") {
+          errorMessage = "Email ou mot de passe incorrect";
+        } else if (backendMessage === "Unauthenticated.") {
+          errorMessage = "Session expirée. Veuillez vous reconnecter.";
+        } else if (backendMessage.includes("not found")) {
+          errorMessage = "Utilisateur non trouvé";
+        } else if (backendMessage.includes("password")) {
+          errorMessage = "Mot de passe incorrect";
+        } else {
+          errorMessage = backendMessage;
+        }
+      } else if (err.message) {
+        errorMessage = `Erreur: ${err.message}`;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -78,16 +115,17 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <Wifi className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">Dashboard IoT</h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="space-y-3 text-center">
+          <div className="flex justify-center mb-2">
+            <div className="p-3 bg-blue-600 rounded-full">
+              <Wifi className="h-8 w-8 text-white" />
+            </div>
           </div>
-          <CardTitle className="text-center">Connexion</CardTitle>
-          <p className="text-center text-muted-foreground">
-            Connectez-vous à votre compte pour accéder au dashboard
+          <CardTitle className="text-2xl font-bold">Dashboard IoT</CardTitle>
+          <p className="text-sm text-slate-600">
+            Connectez-vous pour accéder à votre espace
           </p>
         </CardHeader>
 
@@ -105,10 +143,11 @@ export function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="utilisateur@exemple.com"
+                placeholder="votre.email@exemple.com"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                className="h-11"
               />
             </div>
 
@@ -117,15 +156,20 @@ export function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="••••••••••"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="h-11"
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Connexion..." : "Se connecter"}
+            <Button 
+              type="submit" 
+              className="w-full h-11" 
+              disabled={loading}
+            >
+              {loading ? "Connexion en cours..." : "Se connecter"}
             </Button>
           </form>
         </CardContent>

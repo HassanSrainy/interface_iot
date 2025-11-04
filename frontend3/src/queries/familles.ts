@@ -6,5 +6,6 @@ export function useFamilies() {
     queryKey: ['families'],
     queryFn: getFamilies,
     staleTime: 5 * 60 * 1000, // 5 minutes - les familles changent rarement
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 }

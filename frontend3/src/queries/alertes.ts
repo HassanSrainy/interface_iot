@@ -17,9 +17,11 @@ export function useAlertes() {
       }
     },
     enabled: !!user,
-    staleTime: 2 * 60 * 1000,
-    gcTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 10 * 1000, // 10 seconds - data considered fresh
+    gcTime: 5 * 60 * 1000, // 5 minutes - cache time
+    refetchInterval: 15 * 1000, // Refresh every 15 seconds
+    refetchOnWindowFocus: true, // Refresh when user returns to tab
+    refetchOnReconnect: true, // Refresh on network reconnect
   });
 }
 
@@ -37,8 +39,10 @@ export function useAlertesCounts(ids?: Array<number | string>) {
       }
     },
     enabled: !!user,
-    staleTime: 2 * 60 * 1000,
-    gcTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 15 * 1000, // Refresh every 15 seconds for real-time badge updates
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }

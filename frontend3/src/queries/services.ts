@@ -5,7 +5,8 @@ export function useServices() {
   return useQuery({
     queryKey: ['services'],
     queryFn: getServices,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
   });
 }
 
@@ -14,6 +15,7 @@ export function useServicesByFloor(floorId?: number | string) {
     queryKey: ['services', 'floor', floorId],
     queryFn: () => getServicesByFloor(Number(floorId)),
     enabled: !!floorId && floorId !== '',
-    staleTime: 5 * 60 * 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
   });
 }

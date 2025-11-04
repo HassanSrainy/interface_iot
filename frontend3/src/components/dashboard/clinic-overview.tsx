@@ -364,59 +364,55 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
       {/* PER-CLINIC CARDS */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Vue par Clinique</h3>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2">
           {clinicGroups.map(({ clinic, groups }, idx) => (
-            <Card key={String(clinic.id)}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{clinic.nom}</CardTitle>
-                    <p className="text-xs text-muted-foreground">{clinic.adresse}</p>
+            <Card key={String(clinic.id)} className="overflow-hidden border-2 hover:shadow-lg transition-all duration-200">
+              <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Building className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-900">{clinic.nom}</CardTitle>
+                        <p className="text-sm text-slate-600 mt-0.5">{clinic.adresse}</p>
+                      </div>
+                    </div>
                   </div>
                   {clinic.alertesActives > 0 && (
-                    <Badge variant="destructive" className="text-sm">{clinic.alertesActives} alert{clinic.alertesActives > 1 ? "es" : ""}</Badge>
+                    <Badge variant="destructive" className="text-base px-3 py-1.5 shadow-sm">
+                      <AlertTriangle className="h-4 w-4 mr-1" />
+                      {clinic.alertesActives}
+                    </Badge>
                   )}
                 </div>
               </CardHeader>
 
-              <CardContent>
-                <div className="grid grid-cols-3 gap-4 text-center mb-3">
-                  <div>
-                    <div className="text-2xl font-bold">{clinic.capteurs.length}</div>
-                    <p className="text-xs text-muted-foreground">Capteurs</p>
+              <CardContent className="p-6">
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity className="h-4 w-4 text-blue-600" />
+                      <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Capteurs</p>
+                    </div>
+                    <div className="text-3xl font-bold text-blue-700">{clinic.capteurs.length}</div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-bold text-green-600">{clinic.capteursEnLigne}</div>
-                    <p className="text-xs text-muted-foreground">En ligne</p>
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity className="h-4 w-4 text-green-600" />
+                      <p className="text-xs font-semibold text-green-900 uppercase tracking-wide">En ligne</p>
+                    </div>
+                    <div className="text-3xl font-bold text-green-700">{clinic.capteursEnLigne}</div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-bold text-red-600">{clinic.alertesActives}</div>
-                    <p className="text-xs text-muted-foreground">Alertes</p>
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      <p className="text-xs font-semibold text-red-900 uppercase tracking-wide">Alertes</p>
+                    </div>
+                    <div className="text-3xl font-bold text-red-700">{clinic.alertesActives}</div>
                   </div>
-                </div>
-
-                {/* Floors & services simplified */}
-                <div className="space-y-3">
-                  {groups.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">Aucun service trouvé</div>
-                  ) : (
-                    groups.map((g, gi) => (
-                      <div key={`${String(clinic.id)}-floor-${gi}`}>
-                        <div className="text-sm font-medium mb-1">{g.floorLabel}</div>
-                        <div className="flex flex-wrap gap-2">
-                          {g.services.map((s: any) => (
-                            <div
-                              key={`${String(clinic.id)}-svc-${String(s.id)}`}
-                              className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm"
-                            >
-                              <span className="truncate max-w-[10rem]">{s.nom}</span>
-                              <span className="text-xs text-muted-foreground">• {s.capteurs_count ?? 0}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
               </CardContent>
             </Card>

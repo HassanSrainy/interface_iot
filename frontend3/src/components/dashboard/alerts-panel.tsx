@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw, AlertOctagon } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw, AlertOctagon, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Alerte } from "../alertes/alertes-api";
@@ -84,6 +84,12 @@ export function AlertsPanel({
   const [activePeriod, setActivePeriod] = useState<string>('all');
   const [resolvedPeriod, setResolvedPeriod] = useState<string>('today');
   const [showResolved, setShowResolved] = useState(false);
+  
+  // États de pagination
+  const [activePageIndex, setActivePageIndex] = useState(0);
+  const [resolvedPageIndex, setResolvedPageIndex] = useState(0);
+  const [activeItemsPerPage, setActiveItemsPerPage] = useState(5);
+  const [resolvedItemsPerPage, setResolvedItemsPerPage] = useState(5);
 
   // filtrages
   const allActives = alertes.filter((a) => isActiveStatus(a.statut));
@@ -158,6 +164,27 @@ export function AlertsPanel({
   
   const actives = getFilteredActiveAlerts();
   const filteredResolved = getFilteredResolvedAlerts();
+  
+  // Pagination pour alertes actives
+  const activeTotalPages = Math.max(1, Math.ceil(actives.length / activeItemsPerPage));
+  const activeStartIndex = activePageIndex * activeItemsPerPage;
+  const activePaginatedAlerts = actives.slice(activeStartIndex, activeStartIndex + activeItemsPerPage);
+  
+  // Pagination pour alertes résolues
+  const resolvedTotalPages = Math.max(1, Math.ceil(filteredResolved.length / resolvedItemsPerPage));
+  const resolvedStartIndex = resolvedPageIndex * resolvedItemsPerPage;
+  const resolvedPaginatedAlerts = filteredResolved.slice(resolvedStartIndex, resolvedStartIndex + resolvedItemsPerPage);
+  
+  // Reset pagination quand les filtres changent
+  const handleActivePeriodChange = (value: string) => {
+    setActivePeriod(value);
+    setActivePageIndex(0);
+  };
+  
+  const handleResolvedPeriodChange = (value: string) => {
+    setResolvedPeriod(value);
+    setResolvedPageIndex(0);
+  };
 
   // Si on est en train de charger — afficher uniquement le loader
   if (loading && alertes.length === 0) {
@@ -226,130 +253,148 @@ export function AlertsPanel({
         </Card>
       </div>
 
-      {/* Active alerts list */}
-      {actives.length > 0 ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Alertes Actives</CardTitle>
-            <Select value={activePeriod} onValueChange={setActivePeriod}>
-              <SelectTrigger className="w-[180px]">
+      {/* Active alerts list & Resolved alerts - Côte à côte */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Alertes Actives */}
+        <Card className="flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-lg">Alertes Actives</CardTitle>
+            <Select value={activePeriod} onValueChange={handleActivePeriodChange}>
+              <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Toutes</SelectItem>
                 <SelectItem value="today">Aujourd'hui</SelectItem>
-                <SelectItem value="7days">7 derniers jours</SelectItem>
-                <SelectItem value="30days">30 derniers jours</SelectItem>
+                <SelectItem value="7days">7 jours</SelectItem>
+                <SelectItem value="30days">30 jours</SelectItem>
               </SelectContent>
             </Select>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {actives.map((alerte) => {
-              const capteur = (alerte.capteur as any) ?? {};
-              const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
-              const isCritique = (alerte as any).critique === true || (alerte as any).critique === 1;
+          <CardContent className="space-y-3 flex-1">
+            {activePaginatedAlerts.length > 0 ? (
+              activePaginatedAlerts.map((alerte) => {
+                const capteur = (alerte.capteur as any) ?? {};
+                const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
+                const isCritique = (alerte as any).critique === true || (alerte as any).critique === 1;
 
-              // attempt to read nested relations safely (may be undefined)
-              const cliniqueNom = (capteur?.service as any)?.floor?.clinique?.nom ?? "";
-              const serviceNom = (capteur?.service as any)?.nom ?? "";
+                const cliniqueNom = (capteur?.service as any)?.floor?.clinique?.nom ?? "";
+                const serviceNom = (capteur?.service as any)?.nom ?? "";
 
-              return (
-                <div 
-                  key={alerte.id} 
-                  className={`flex items-center justify-between p-4 border rounded-lg ${
-                    isCritique ? 'bg-red-50 border-red-300' : 'bg-white'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={getAlertColor(alerte.type ?? "", alerte.statut)}>
-                      {isCritique ? (
-                        <AlertOctagon className="h-5 w-5 text-red-600" />
-                      ) : (
-                        getAlertIcon(alerte.type ?? "")
-                      )}
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium">{capteurLabel}</span>
-                        {isCritique && (
-                          <Badge variant="destructive" className="text-xs animate-pulse">
-                            🔴 CRITIQUE
-                          </Badge>
+                return (
+                  <div 
+                    key={alerte.id} 
+                    className={`flex items-start justify-between p-3 border rounded-lg ${
+                      isCritique ? 'bg-red-50 border-red-300' : 'bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start space-x-3 flex-1">
+                      <div className={getAlertColor(alerte.type ?? "", alerte.statut)}>
+                        {isCritique ? (
+                          <AlertOctagon className="h-5 w-5 text-red-600 mt-0.5" />
+                        ) : (
+                          <div className="mt-0.5">{getAlertIcon(alerte.type ?? "")}</div>
                         )}
-                        <Badge variant={isCritique ? "destructive" : "outline"} className="text-xs">
-                          {(alerte.type ?? "").replace("_", " ")}
-                        </Badge>
                       </div>
 
-                      <p className="text-sm text-muted-foreground">{getAlertMessage(alerte)}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 flex-wrap">
+                          <span className="font-medium text-sm">{capteurLabel}</span>
+                          {isCritique && (
+                            <Badge variant="destructive" className="text-xs animate-pulse">
+                              CRITIQUE
+                            </Badge>
+                          )}
+                        </div>
+                        <Badge variant={isCritique ? "destructive" : "outline"} className="text-xs mt-1">
+                          {(alerte.type ?? "").replace("_", " ")}
+                        </Badge>
 
-                      {(cliniqueNom || serviceNom) && (
-                        <p className="text-xs text-muted-foreground">
-                          {cliniqueNom ? `${cliniqueNom}` : ""}{cliniqueNom && serviceNom ? " - " : ""}{serviceNom}
-                        </p>
-                      )}
+                        <p className="text-sm text-muted-foreground mt-1">{getAlertMessage(alerte)}</p>
 
-                      <p className="text-xs text-muted-foreground">{formatDate(alerte.date)}</p>
+                        {(cliniqueNom || serviceNom) && (
+                          <p className="text-xs text-muted-foreground mt-1 truncate">
+                            {cliniqueNom ? `${cliniqueNom}` : ""}{cliniqueNom && serviceNom ? " - " : ""}{serviceNom}
+                          </p>
+                        )}
+
+                        <p className="text-xs text-muted-foreground mt-1">{formatDate(alerte.date)}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center border-2 border-dashed rounded-lg">
+                {allActives.length === 0 
+                  ? "Aucune alerte active"
+                  : `Aucune alerte active pour ${
+                      activePeriod === 'today' ? "aujourd'hui" : 
+                      activePeriod === '7days' ? "les 7 derniers jours" :
+                      activePeriod === '30days' ? "les 30 derniers jours" : "cette période"
+                    }`
+                }
+              </div>
+            )}
           </CardContent>
+          
+          {/* Pagination alertes actives */}
+          {actives.length > 0 && (
+            <div className="px-6 pb-4 border-t pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground">
+                Page {activePageIndex + 1} / {activeTotalPages} • {actives.length} alerte{actives.length > 1 ? 's' : ''}
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={String(activeItemsPerPage)} onValueChange={(v) => { setActiveItemsPerPage(Number(v)); setActivePageIndex(0); }}>
+                  <SelectTrigger className="w-[100px] h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 / page</SelectItem>
+                    <SelectItem value="10">10 / page</SelectItem>
+                    <SelectItem value="15">15 / page</SelectItem>
+                    <SelectItem value="20">20 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActivePageIndex(p => Math.max(0, p - 1))}
+                  disabled={activePageIndex === 0}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActivePageIndex(p => Math.min(activeTotalPages - 1, p + 1))}
+                  disabled={activePageIndex >= activeTotalPages - 1}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
-      ) : (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Alertes Actives</CardTitle>
-            <Select value={activePeriod} onValueChange={setActivePeriod}>
-              <SelectTrigger className="w-[180px]">
+
+        {/* Alertes Résolues */}
+        <Card className="flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-lg">Alertes Résolues</CardTitle>
+            <Select value={resolvedPeriod} onValueChange={handleResolvedPeriodChange}>
+              <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toutes</SelectItem>
                 <SelectItem value="today">Aujourd'hui</SelectItem>
-                <SelectItem value="7days">7 derniers jours</SelectItem>
-                <SelectItem value="30days">30 derniers jours</SelectItem>
+                <SelectItem value="7days">7 jours</SelectItem>
+                <SelectItem value="all">Toutes</SelectItem>
               </SelectContent>
             </Select>
           </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              {allActives.length === 0 
-                ? "Aucune alerte active pour le moment."
-                : `Aucune alerte active pour ${
-                    activePeriod === 'today' ? "aujourd'hui" : 
-                    activePeriod === '7days' ? "les 7 derniers jours" :
-                    activePeriod === '30days' ? "les 30 derniers jours" : "cette période"
-                  }.`
-              }
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recently resolved */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Alertes Résolues</CardTitle>
-          <div className="flex items-center gap-3">
-            <Select value={resolvedPeriod} onValueChange={setResolvedPeriod}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Aujourd'hui</SelectItem>
-                <SelectItem value="7days">7 derniers jours</SelectItem>
-                <SelectItem value="all">Toutes</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {filteredResolved.length > 0 ? (
-            <div className="space-y-2">
-              {filteredResolved.slice(0, 10).map((alerte) => {
+          <CardContent className="space-y-3 flex-1">
+            {resolvedPaginatedAlerts.length > 0 ? (
+              resolvedPaginatedAlerts.map((alerte) => {
                 const capteur = (alerte.capteur as any) ?? {};
                 const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
                 const dateResolution = (alerte as any).date_resolution 
@@ -357,34 +402,69 @@ export function AlertsPanel({
                   : 'N/A';
                 
                 return (
-                  <div key={alerte.id} className="flex items-center justify-between p-3 border rounded bg-green-50">
-                    <div className="flex items-center space-x-3">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <div>
-                        <div className="flex items-center gap-2">
+                  <div key={alerte.id} className="flex items-start justify-between p-3 border rounded-lg bg-green-50">
+                    <div className="flex items-start space-x-3 flex-1">
+                      <CheckCircle className="h-4 w-4 text-green-500 mt-1" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium">{capteurLabel}</span>
                           <Badge variant="outline" className="text-xs">
                             {(alerte.type ?? "").replace("_", " ")}
                           </Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground">{getAlertMessage(alerte)}</p>
-                        <p className="text-xs text-green-600">Résolu le: {dateResolution}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{getAlertMessage(alerte)}</p>
+                        <p className="text-xs text-green-600 mt-1">Résolu: {dateResolution}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-xs bg-green-100 text-green-700">
-                      Résolu
-                    </Badge>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground py-4 text-center">
-              Aucune alerte résolue pour cette période
+              })
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center border-2 border-dashed rounded-lg">
+                Aucune alerte résolue pour cette période
+              </div>
+            )}
+          </CardContent>
+          
+          {/* Pagination alertes résolues */}
+          {filteredResolved.length > 0 && (
+            <div className="px-6 pb-4 border-t pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground">
+                Page {resolvedPageIndex + 1} / {resolvedTotalPages} • {filteredResolved.length} alerte{filteredResolved.length > 1 ? 's' : ''}
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={String(resolvedItemsPerPage)} onValueChange={(v) => { setResolvedItemsPerPage(Number(v)); setResolvedPageIndex(0); }}>
+                  <SelectTrigger className="w-[100px] h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 / page</SelectItem>
+                    <SelectItem value="10">10 / page</SelectItem>
+                    <SelectItem value="15">15 / page</SelectItem>
+                    <SelectItem value="20">20 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResolvedPageIndex(p => Math.max(0, p - 1))}
+                  disabled={resolvedPageIndex === 0}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResolvedPageIndex(p => Math.min(resolvedTotalPages - 1, p + 1))}
+                  disabled={resolvedPageIndex >= resolvedTotalPages - 1}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

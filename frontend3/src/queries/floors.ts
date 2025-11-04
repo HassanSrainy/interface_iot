@@ -5,7 +5,8 @@ export function useFloors() {
   return useQuery({
     queryKey: ['floors'],
     queryFn: getFloors,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
   });
 }
 
@@ -14,6 +15,7 @@ export function useFloorsByClinique(cliniqueId?: number | string) {
     queryKey: ['floors', 'clinique', cliniqueId],
     queryFn: () => getFloorsByClinique(Number(cliniqueId)),
     enabled: !!cliniqueId && cliniqueId !== '',
-    staleTime: 5 * 60 * 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
   });
 }

@@ -64,34 +64,6 @@ api.interceptors.response.use(
   }
 );
 
-// Intercepteur pour gérer le CSRF token
-api.interceptors.request.use(async (config) => {
-  if (!document.cookie.includes('XSRF-TOKEN')) {
-    try {
-      await axios.get(`${baseURL}/sanctum/csrf-cookie`, { 
-        withCredentials: true,
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      
-      // Attendre un peu pour s'assurer que le cookie est bien défini
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error('Erreur lors de la récupération du cookie CSRF:', error);
-    }
-  }
-
-  // Ajouter le token CSRF à l'en-tête X-XSRF-TOKEN
-  const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
-  if (match) {
-    config.headers['X-XSRF-TOKEN'] = decodeURIComponent(match[1]);
-  }
-
-  return config;
-});
-
 // Central helper to ensure CSRF cookie is present for root backend domain.
 // Other modules (login, register, etc.) should call this before issuing write requests
 // that require VerifyCsrfToken. It is idempotent and returns once the cookie exists.

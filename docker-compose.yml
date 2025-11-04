@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # Base de données MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: clinic-monitoring-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: backend-iot
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_USER: clinic_user
+      MYSQL_PASSWORD: clinic_password
+    ports:
+      - "3308:3306"  # Port externe 3308 pour éviter conflit avec MySQL local
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - clinic-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Backend Laravel
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clinic-monitoring-backend
+    restart: unless-stopped
+    working_dir: /var/www
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: backend-iot
+      DB_USERNAME: clinic_user
+      DB_PASSWORD: clinic_password
+      APP_ENV: local
+      APP_DEBUG: true
+      APP_KEY: base64:6A3OlM3FJxdVTOUQGG8PaUf4Z0rthGW70e2Z6SvkemQ=
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - clinic-network
+    command: >
+      sh -c "
+        php artisan migrate:fresh --force --seed &&
+        php artisan serve --host=0.0.0.0 --port=8000
+      "
+
+  # Laravel Scheduler (Cron)
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clinic-monitoring-scheduler
+    restart: unless-stopped
+    working_dir: /var/www
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: backend-iot
+      DB_USERNAME: clinic_user
+      DB_PASSWORD: clinic_password
+      APP_ENV: local
+      APP_DEBUG: true
+      APP_KEY: base64:6A3OlM3FJxdVTOUQGG8PaUf4Z0rthGW70e2Z6SvkemQ=
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - clinic-network
+    command: >
+      sh -c "
+        while [ ! -f /var/www/vendor/autoload.php ]; do sleep 1; done &&
+        php artisan schedule:work
+      "
+
+  # Frontend React + Vite
+  frontend:
+    build:
+      context: ./frontend3
+      dockerfile: Dockerfile
+    container_name: clinic-monitoring-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - clinic-network
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+
+volumes:
+  mysql_data:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+networks:
+  clinic-network:
+    driver: bridge

@@ -21,7 +21,7 @@ import {
 import { ModernPagination } from '../ui/modern-pagination';
 import { Plus, Edit, Trash2, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { UnitSelector } from './UnitSelector';
+import { UnitSearchInput } from './UnitSearchInput';
 import { UnitDisplay } from './UnitDisplay';
 
 import { useAuth } from '../../context/AuthProvider';
@@ -672,10 +672,10 @@ export function SensorManagementUser() {
 
                 <div className="space-y-1 col-span-2">
                   <Label htmlFor="unite">Unité de mesure</Label>
-                  <UnitSelector
+                  <UnitSearchInput
                     value={formData.unite}
                     onChange={(value) => setFormData({ ...formData, unite: value })}
-                    placeholder="Sélectionner une unité (ex: °C, %, bar...)"
+                    placeholder="Rechercher une unité (ex: Celsius, %, bar...)"
                   />
                   {errors.unite && <p className="text-xs text-red-600 mt-1">{errors.unite[0]}</p>}
                 </div>

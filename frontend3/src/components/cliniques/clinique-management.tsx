@@ -25,7 +25,7 @@ import {
 import { 
   Trash2, Edit, Plus, ChevronDown, ChevronRight, 
   Wifi, WifiOff, RefreshCw, Building2, Layers, 
-  Briefcase, Activity, Search
+  Briefcase, Activity
 } from "lucide-react";
 
 type Clinique = cliniquesApi.Clinique;
@@ -394,12 +394,11 @@ export function CliniqueManagement(): React.ReactElement {
           h("div", { className: "flex flex-wrap gap-3 items-center" },
             // Search input
             h("div", { className: "relative flex-1 min-w-[250px]" },
-              h(Search, { className: "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" }),
               h(Input, {
                 placeholder: "Rechercher par nom, ville, adresse...",
                 value: searchTerm,
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value),
-                className: "pl-10"
+                className: "h-11 text-base"
               })
             ),
             

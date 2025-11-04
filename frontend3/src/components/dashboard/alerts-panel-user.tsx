@@ -4,8 +4,9 @@ import { Badge } from "../ui/badge";
 import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw, AlertOctagon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { getAlertesByUser, Alerte } from "../alertes/alertes-api";
+import { Alerte } from "../alertes/alertes-api";
 import { useAuth } from "../../hooks/useAuth";
+import { useAlertes } from "../../queries/alertes";
 
 // --- Helpers ---
 const isActiveStatus = (s?: string) => String(s ?? "").toLowerCase() === "actif";
@@ -75,31 +76,9 @@ export function AlertsPanelUser({
   refreshInterval?: number;
 }) {
   const { user } = useAuth();
-  const [alertes, setAlertes] = useState<Alerte[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: alertes = [], isLoading, refetch } = useAlertes();
   const [activePeriod, setActivePeriod] = useState<string>('all');
   const [resolvedPeriod, setResolvedPeriod] = useState<string>('today');
-
-  const fetchAlertes = async () => {
-    if (!user?.id) return;
-    try {
-      setLoading(true);
-      const data = await getAlertesByUser(user.id);
-      setAlertes(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Erreur chargement alertes utilisateur:", err);
-      setAlertes([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAlertes();
-    if (!autoRefresh) return;
-    const t = setInterval(fetchAlertes, refreshInterval);
-    return () => clearInterval(t);
-  }, [user]);
 
   const allActives = alertes.filter((a) => isActiveStatus(a.statut));
   const resolved = alertes.filter((a) => isResolvedStatus(a.statut));
@@ -152,7 +131,7 @@ export function AlertsPanelUser({
   const actives = getFilteredActiveAlerts();
   const filteredResolved = getFilteredResolvedAlerts();
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="p-4">
         <Card>
@@ -174,13 +153,13 @@ export function AlertsPanelUser({
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchAlertes}
+          onClick={() => refetch()}
           title="Rafraîchir"
           aria-label="Rafraîchir les alertes"
-          disabled={loading}
+          disabled={isLoading}
           className="p-2"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 

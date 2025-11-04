@@ -1,16 +1,11 @@
-// src/components/alertes/alertes-management.tsx
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
+import { Label } from "../ui/label";
+import { FilterBar } from "../layout/FilterBar";
+import { CustomSelect, CustomSelectItem } from "../ui/custom-select";
 import {
   Table,
   TableBody,
@@ -21,20 +16,18 @@ import {
 } from "../ui/table";
 import { TablePagination } from "../ui/table-pagination";
 import {
-  Search,
-  Filter,
   WifiOff,
   AlertTriangle,
   ArrowUp,
   ArrowDown,
   CheckCircle2,
   RefreshCw,
-  X,
   Clock,
-  Zap,
-  TrendingDown,
-  TrendingUp,
+  Cpu,
   AlertOctagon,
+  Zap,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 
 import { Alerte, RawStatut } from "./alertes-api";
@@ -64,12 +57,11 @@ export function AlertesManagement() {
   // Use React Query hook for automatic role-based filtering
   const { data: alertesData = [], isLoading, refetch } = useAlertes();
   
-  const [alertes, setAlertes] = useState<Alerte[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "actif" | "inactif">(
-    "all"
+    "actif" // Par défaut: afficher les alertes actives
   );
   const [filterType, setFilterType] = useState<"all" | string>("all");
   const [filterCritique, setFilterCritique] = useState<"all" | "critique" | "non-critique">("all");
@@ -77,13 +69,6 @@ export function AlertesManagement() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  // Sync alertes from React Query
-  useEffect(() => {
-    if (alertesData) {
-      setAlertes(alertesData);
-    }
-  }, [alertesData]);
 
   const refresh = async () => {
     setError(null);
@@ -96,17 +81,17 @@ export function AlertesManagement() {
 
   /* counts */
   const counts = useMemo(() => {
-    const total = alertes.length;
-    const actif = alertes.filter((a) => isActiveStatus(a.statut)).length;
-    const inactif = alertes.filter((a) => isInactiveStatus(a.statut)).length;
-    const critiques = alertes.filter((a) => (a as any).critique === true || (a as any).critique === 1).length;
-    const critiquesActives = alertes.filter((a) => 
+    const total = alertesData.length;
+    const actif = alertesData.filter((a) => isActiveStatus(a.statut)).length;
+    const inactif = alertesData.filter((a) => isInactiveStatus(a.statut)).length;
+    const critiques = alertesData.filter((a) => (a as any).critique === true || (a as any).critique === 1).length;
+    const critiquesActives = alertesData.filter((a) => 
       isActiveStatus(a.statut) && ((a as any).critique === true || (a as any).critique === 1)
     ).length;
 
-    const deconn = alertes.filter((a) => isDeconnexion(a.type));
-    const high = alertes.filter((a) => isHigh(a.type));
-    const low = alertes.filter((a) => isLow(a.type));
+    const deconn = alertesData.filter((a) => isDeconnexion(a.type));
+    const high = alertesData.filter((a) => isHigh(a.type));
+    const low = alertesData.filter((a) => isLow(a.type));
 
     const count = (arr: Alerte[]) => ({
       total: arr.length,
@@ -124,11 +109,11 @@ export function AlertesManagement() {
       high: count(high),
       low: count(low),
     };
-  }, [alertes]);
+  }, [alertesData]);
 
   const lastUpdated = useMemo(() => {
-    if (!alertes.length) return null;
-    const timestamps = alertes
+    if (!alertesData.length) return null;
+    const timestamps = alertesData
       .map((a) => {
         const date = new Date(a.date);
         return Number.isNaN(date.getTime()) ? null : date.getTime();
@@ -143,7 +128,7 @@ export function AlertesManagement() {
       hour: "2-digit",
       minute: "2-digit",
     });
-  }, [alertes]);
+  }, [alertesData]);
 
   const statHighlights = useMemo(() => {
     const activeRate = counts.total ? Math.round((counts.actif / counts.total) * 100) : 0;
@@ -228,71 +213,46 @@ export function AlertesManagement() {
   ], [counts]);
 
   const renderHeader = () => (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Gestion des alertes</h1>
-            <p className="mt-2 text-slate-600">
-              Surveillez, priorisez et clôturez les alertes critiques directement depuis cet espace.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-            <span className="inline-flex items-center gap-2">
-              <AlertOctagon className="h-4 w-4 text-red-600" />
-              {counts.critiquesActives} critiques actives
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Zap className="h-4 w-4 text-amber-500" />
-              {counts.actif} alertes en cours
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              {counts.inactif} alertes résolues
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              variant="outline"
-              onClick={resetFilters}
-              disabled={isLoading}
-              className="whitespace-nowrap"
-            >
-              Réinitialiser les filtres
-            </Button>
-            <Button onClick={refresh} disabled={isLoading} className="whitespace-nowrap">
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-              Actualiser
-            </Button>
-          </div>
-          <p className="text-xs text-slate-500 sm:text-right">
-            Dernière mise à jour&nbsp;: {lastUpdated ?? "non disponible"}
-          </p>
-        </div>
+    <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Gestion des alertes</h1>
+        <p className="text-slate-600 mt-1">
+          Surveillez, priorisez et clôturez les alertes critiques directement depuis cet espace.
+        </p>
       </div>
-    </section>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={refresh}
+        title="Rafraîchir"
+        aria-label="Rafraîchir les alertes"
+        disabled={isLoading}
+        className="p-2"
+      >
+        <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+      </Button>
+    </div>
   );
 
   const types = useMemo(() => {
     const s = new Set<string>();
-    alertes.forEach((a) => {
+    alertesData.forEach((a) => {
       if (a.type) s.add(a.type);
     });
     return ["all", ...Array.from(s)];
-  }, [alertes]);
+  }, [alertesData]);
 
   const resetFilters = () => {
     setSearchTerm("");
-    setFilterStatus("all");
+    setFilterStatus("actif"); // Par défaut: alertes actives
     setFilterType("all");
     setFilterCritique("all");
   };
 
   const filteredAlertes = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return alertes.filter((a) => {
+    return alertesData.filter((a) => {
       const matchesSearch =
         q === "" ||
         (a.capteur?.matricule ?? "")
@@ -318,7 +278,7 @@ export function AlertesManagement() {
 
       return matchesSearch && matchesStatus && matchesType && matchesCritique;
     });
-  }, [alertes, searchTerm, filterStatus, filterType, filterCritique]);
+  }, [alertesData, searchTerm, filterStatus, filterType, filterCritique]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredAlertes.length / itemsPerPage);
@@ -329,7 +289,7 @@ export function AlertesManagement() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterType, filterCritique]);
+  }, [searchTerm, filterStatus, filterType, filterCritique, itemsPerPage]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -350,54 +310,27 @@ export function AlertesManagement() {
   const statutDisplay = (s: RawStatut) => {
     if (isActiveStatus(s))
       return (
-        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5">
-          <div className="h-2 w-2 rounded-full bg-amber-500"></div>
-          <span className="text-sm font-semibold text-amber-700">Actif</span>
-        </div>
+        <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 font-medium">
+          Actif
+        </Badge>
       );
     if (isInactiveStatus(s))
       return (
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          <span className="text-sm font-semibold text-emerald-700">Résolu</span>
-        </div>
+        <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 font-medium">
+          Résolu
+        </Badge>
       );
     return (
-      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5">
-        <AlertTriangle className="h-4 w-4 text-slate-500" />
-        <span className="text-sm font-medium text-slate-700">{s}</span>
-      </div>
+      <Badge variant="secondary" className="font-medium">
+        {s}
+      </Badge>
     );
   };
 
   const typeDisplay = (t?: string) => {
     const text = t ?? "—";
-    if (isDeconnexion(t))
-      return (
-        <span className="inline-flex items-center gap-2 text-sm">
-          <WifiOff className="w-4 h-4 text-red-600" />
-          <span>{text}</span>
-        </span>
-      );
-    if (isHigh(t))
-      return (
-        <span className="inline-flex items-center gap-2 text-sm">
-          <ArrowUp className="w-4 h-4 text-orange-600" />
-          <span>{text}</span>
-        </span>
-      );
-    if (isLow(t))
-      return (
-        <span className="inline-flex items-center gap-2 text-sm">
-          <ArrowDown className="w-4 h-4 text-blue-600" />
-          <span>{text}</span>
-        </span>
-      );
     return (
-      <span className="inline-flex items-center gap-2 text-sm">
-        <AlertTriangle className="w-4 h-4 text-slate-600" />
-        <span>{text}</span>
-      </span>
+      <span className="text-sm text-slate-700">{text}</span>
     );
   };
 
@@ -436,32 +369,27 @@ export function AlertesManagement() {
   }
 
   return (
-    <div className="space-y-8 bg-slate-50 p-6 lg:p-8">
+    <div className="space-y-6">
       {renderHeader()}
 
+      {/* Statistics Cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {statHighlights.map((highlight) => {
           const Icon = highlight.icon;
           return (
             <Card
               key={highlight.id}
-              className="h-full border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+              className="border-2 hover:shadow-lg transition-all duration-200"
             >
-              <CardContent className="flex h-full flex-col justify-between gap-6 p-6">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {highlight.label}
-                    </p>
-                    <p className={`text-3xl font-semibold ${highlight.valueClass}`}>{highlight.value}</p>
-                  </div>
-                  <div className={`rounded-full p-3 ${highlight.iconClass}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
+              <CardContent className="flex items-center justify-between p-6">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {highlight.label}
+                  </p>
+                  <p className={`text-3xl font-bold mt-2 ${highlight.valueClass}`}>{highlight.value}</p>
                 </div>
-                <div className="space-y-2 text-sm text-slate-600">
-                  <p>{highlight.description}</p>
-                  <p className="font-semibold text-slate-700">{highlight.trend}</p>
+                <div className={`rounded-full p-4 ${highlight.iconClass}`}>
+                  <Icon className="h-6 w-6" />
                 </div>
               </CardContent>
             </Card>
@@ -469,171 +397,63 @@ export function AlertesManagement() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {categoryCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <Card
-              key={card.id}
-              className="h-full border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <CardHeader className="flex flex-row items-start justify-between gap-4 pb-0">
-                <div className="space-y-1">
-                  <CardTitle className="text-base text-slate-800">{card.title}</CardTitle>
-                  <CardDescription>{card.description}</CardDescription>
-                </div>
-                <div className={`rounded-lg p-2 ${card.iconClass}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-6">
-                <div className="text-3xl font-semibold text-slate-900">{card.total}</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Actives</p>
-                    <p className="text-lg font-semibold text-amber-700">{card.actif}</p>
-                  </div>
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Résolues</p>
-                    <p className="text-lg font-semibold text-emerald-700">{card.inactif}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <Card className="border border-slate-200 shadow-sm">
-        <CardHeader className="flex flex-col gap-2 pb-0">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
-                <Filter className="h-5 w-5" />
-                Filtres intelligents
-              </CardTitle>
-              <CardDescription>
-                Affinez la liste selon le statut, le type et la criticité des alertes
-              </CardDescription>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-slate-700">
-              {filteredAlertes.length} résultat{filteredAlertes.length > 1 ? 's' : ''}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5 pt-6">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <Input
-              className="h-12 border-2 pl-12 pr-12 text-base focus:border-slate-900 focus:ring-0"
-              placeholder="Rechercher par matricule, type, valeur ou ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100"
-                aria-label="Effacer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
-              <SelectTrigger className="h-11 min-w-[12rem] border-2">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <SelectValue placeholder="Statut" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-slate-400"></span>
-                    Tous les statuts
-                  </div>
-                </SelectItem>
-                <SelectItem value="actif">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
-                    Actif
-                  </div>
-                </SelectItem>
-                <SelectItem value="inactif">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                    Inactif
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
-              <SelectTrigger className="h-11 min-w-[14rem] border-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  <SelectValue placeholder="Type d'alerte" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                {types.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t === "all" ? "Tous les types" : t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filterCritique} onValueChange={(v: any) => setFilterCritique(v)}>
-              <SelectTrigger className="h-11 min-w-[14rem] border-2">
-                <div className="flex items-center gap-2">
-                  <AlertOctagon className="h-4 w-4 text-red-600" />
-                  <SelectValue placeholder="Criticité" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes les alertes</SelectItem>
-                <SelectItem value="critique">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-600"></span>
-                    Critiques seulement
-                  </div>
-                </SelectItem>
-                <SelectItem value="non-critique">Non critiques</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={resetFilters}
-              className="ml-auto text-slate-600 transition-colors hover:text-slate-900"
-            >
-              <X className="mr-2 h-4 w-4" />
-              Réinitialiser
-            </Button>
-          </div>
+      {/* Search Bar */}
+      <Card className="shadow-sm">
+        <CardContent className="pt-6">
+          <Input
+            placeholder=" Rechercher par matricule, type, valeur ou ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-11 text-base"
+          />
         </CardContent>
       </Card>
 
+      {/* Filters with FilterBar component */}
+      <FilterBar
+        sections={[
+          {
+            label: "Filtres",
+            content: (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs text-slate-600 mb-1.5">Statut</Label>
+                  <CustomSelect value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)} className="w-full">
+                    <CustomSelectItem value="all">Tous les statuts</CustomSelectItem>
+                    <CustomSelectItem value="actif">Actif</CustomSelectItem>
+                    <CustomSelectItem value="inactif">Résolu</CustomSelectItem>
+                  </CustomSelect>
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-600 mb-1.5">Type d'alerte</Label>
+                  <CustomSelect value={filterType} onValueChange={(v: any) => setFilterType(v)} className="w-full">
+                    {types.map(t => (
+                      <CustomSelectItem key={t} value={t}>{t === 'all' ? 'Tous les types' : t}</CustomSelectItem>
+                    ))}
+                  </CustomSelect>
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-600 mb-1.5">Criticité</Label>
+                  <CustomSelect value={filterCritique} onValueChange={(v: any) => setFilterCritique(v)} className="w-full">
+                    <CustomSelectItem value="all">Toutes</CustomSelectItem>
+                    <CustomSelectItem value="critique">Critiques</CustomSelectItem>
+                    <CustomSelectItem value="non-critique">Normales</CustomSelectItem>
+                  </CustomSelect>
+                </div>
+              </div>
+            ),
+          },
+        ]}
+        onReset={resetFilters}
+        stats={
+          <span>
+            {filteredAlertes.length} alerte{filteredAlertes.length > 1 ? 's' : ''}
+          </span>
+        }
+      />
+
       {/* Table */}
-      <Card className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-        <CardHeader className="border-b bg-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-xl">Liste des Alertes</CardTitle>
-              <CardDescription className="mt-1">
-                Détails complets de toutes les alertes du système
-              </CardDescription>
-            </div>
-            <Badge variant="outline" className="text-sm px-3 py-1.5">
-              Page {currentPage} / {totalPages}
-            </Badge>
-          </div>
-        </CardHeader>
+      <Card className="border-2">
         <CardContent className="p-0">
           <AlertesTable
             alertes={paginatedAlertes}
@@ -671,34 +491,34 @@ function AlertesTable(props: {
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+          <TableRow className="bg-slate-50 hover:bg-slate-50">
             <TableHead className="font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                <Cpu className="w-4 h-4 text-slate-500" />
                 Capteur
               </div>
             </TableHead>
             <TableHead className="font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-orange-500" />
+                <AlertTriangle className="w-4 h-4 text-slate-500" />
                 Type d'Alerte
               </div>
             </TableHead>
             <TableHead className="font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-500" />
+                <TrendingUp className="w-4 h-4 text-slate-500" />
                 Valeur
               </div>
             </TableHead>
             <TableHead className="font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <AlertOctagon className="w-4 h-4 text-red-600" />
+                <AlertOctagon className="w-4 h-4 text-slate-500" />
                 Criticité
               </div>
             </TableHead>
             <TableHead className="font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-yellow-500" />
+                <CheckCircle2 className="w-4 h-4 text-slate-500" />
                 Statut
               </div>
             </TableHead>
@@ -728,18 +548,18 @@ function AlertesTable(props: {
             </TableRow>
           )}
 
-          {alertes.map((a) => {
+          {alertes.length > 0 && alertes.map((a) => {
             const isCritique = (a as any).critique === true || (a as any).critique === 1;
             return (
               <TableRow 
                 key={a.id} 
-                className={`transition-colors duration-200 ${isCritique ? "bg-red-50/80" : ""} hover:bg-slate-50`}
+                className={`transition-colors hover:bg-slate-50 ${isCritique ? "bg-red-50/30" : ""}`}
               >
                 {/* Capteur */}
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
-                      <span className="text-xs font-bold text-blue-700">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 border border-slate-200">
+                      <span className="text-xs font-bold text-slate-700">
                         {a.capteur?.matricule?.substring(0, 2).toUpperCase() ?? "NA"}
                       </span>
                     </div>
@@ -778,17 +598,13 @@ function AlertesTable(props: {
                 {/* Critique */}
                 <TableCell>
                   {isCritique ? (
-                    <div 
-                      className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-100 px-3 py-1.5 text-red-700"
-                    >
-                      <AlertOctagon className="h-4 w-4" />
-                      <span className="text-xs font-bold uppercase tracking-wide">Critique</span>
-                    </div>
+                    <Badge variant="destructive" className="font-medium">
+                      Critique
+                    </Badge>
                   ) : (
-                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-slate-600">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span className="text-xs font-medium">Normal</span>
-                    </div>
+                    <Badge variant="secondary" className="font-medium">
+                      Normal
+                    </Badge>
                   )}
                 </TableCell>
 
@@ -797,13 +613,8 @@ function AlertesTable(props: {
 
                 {/* Date */}
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-slate-100 rounded-md">
-                      <Clock className="w-3.5 h-3.5 text-slate-600" />
-                    </div>
-                    <div className="text-sm text-slate-600 font-medium">
-                      {formatDate(a.date)}
-                    </div>
+                  <div className="text-sm text-slate-600 font-medium">
+                    {formatDate(a.date)}
                   </div>
                 </TableCell>
               </TableRow>

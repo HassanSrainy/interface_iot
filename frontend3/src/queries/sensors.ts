@@ -17,8 +17,11 @@ export function useSensors() {
       }
     },
     enabled: !!user,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 15 * 1000, // Refresh every 15 seconds for real-time status
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
@@ -60,8 +63,11 @@ export function useSensorsAlertCounts(sensorIds?: number[]) {
     queryKey: ['sensors', 'alertCounts', sensorIds?.join(',') ?? 'all'],
     queryFn: () => getSensorsAlertCounts(sensorIds),
     enabled: Array.isArray(sensorIds) ? sensorIds.length > 0 : true,
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    gcTime: 5 * 60 * 1000,
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 15 * 1000, // Refresh every 15 seconds
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
@@ -80,7 +86,10 @@ export function useSensorMesures(sensorId?: number, options?: { days?: number; d
       return getSensorMesures(Number(sensorId), options);
     },
     enabled: !!sensorId,
-    staleTime: 60 * 1000, // 1 minute pour les mesures
-    gcTime: 3 * 60 * 1000,
+    staleTime: 10 * 1000, // 10 seconds for real-time measurements
+    gcTime: 3 * 60 * 1000, // 3 minutes
+    refetchInterval: 20 * 1000, // Refresh every 20 seconds
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }

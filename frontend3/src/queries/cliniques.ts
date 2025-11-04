@@ -17,8 +17,11 @@ export function useCliniques() {
       }
     },
     enabled: !!user,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 30 * 1000, // 30 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 30 * 1000, // Refresh every 30 seconds
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     select: (data: any) => {
       const cliniques = Array.isArray(data) ? data : (data as any)?.data ?? [];
       

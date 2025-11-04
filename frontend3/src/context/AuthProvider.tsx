@@ -24,10 +24,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (stored) {
           setToken(stored);
           api.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
+          console.log('AuthProvider: Found stored token, attempting to fetch user');
+          
+          try {
+            const u = await getUser();
+            setUser(u);
+            console.log('AuthProvider: Successfully restored user from token', u);
+          } catch (error) {
+            // Token invalide ou expiré, nettoyer tout
+            console.warn('AuthProvider: Token invalid or expired, cleaning up', error);
+            localStorage.removeItem('api_token');
+            localStorage.removeItem('user');
+            delete api.defaults.headers.common['Authorization'];
+            setUser(null);
+            setToken(null);
+          }
+        } else {
+          console.log('AuthProvider: No stored token found');
+          setUser(null);
         }
-        const u = await getUser();
-        setUser(u);
       } catch (e) {
+        console.error('AuthProvider: Initialization error', e);
         setUser(null);
       } finally {
         setLoading(false);
@@ -37,35 +54,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (data: LoginData) => {
-    const res = await apiLogin(data);
-    // apiLogin stores token and sets defaults. Fetch the canonical user from /api/user
     try {
-      const fullUser = await getUser();
-      setUser(fullUser);
-  console.debug('AuthProvider: logged in user', fullUser);
-      // persist user snapshot
-      try { localStorage.setItem('user', JSON.stringify(fullUser)); } catch {}
-      const stored = localStorage.getItem('api_token');
-      if (stored) setToken(stored);
-      return { user: fullUser, message: res.message };
-    } catch (e) {
-      // fallback to returned user
-      if (res?.user) {
-        setUser(res.user);
-        try { localStorage.setItem('user', JSON.stringify(res.user)); } catch {}
+      const res = await apiLogin(data);
+      
+      // Wait a bit to ensure token is properly set in axios defaults
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // apiLogin stores token and sets defaults. Fetch the canonical user from /api/user
+      try {
+        const fullUser = await getUser();
+        setUser(fullUser);
+        console.debug('AuthProvider: logged in user', fullUser);
+        // persist user snapshot
+        try { localStorage.setItem('user', JSON.stringify(fullUser)); } catch {}
+        const stored = localStorage.getItem('api_token');
+        if (stored) setToken(stored);
+        return { user: fullUser, message: res.message };
+      } catch (e) {
+        console.error('AuthProvider: Failed to fetch user after login', e);
+        // fallback to returned user
+        if (res?.user) {
+          setUser(res.user);
+          try { localStorage.setItem('user', JSON.stringify(res.user)); } catch {}
+        }
+        const stored = localStorage.getItem('api_token');
+        if (stored) setToken(stored);
+        return res;
       }
-      const stored = localStorage.getItem('api_token');
-      if (stored) setToken(stored);
-      return res;
+    } catch (error) {
+      console.error('AuthProvider: login error', error);
+      throw error;
     }
   };
 
   const logout = async () => {
-    await apiLogout().catch(() => {});
+    console.log('AuthProvider: Logging out...');
+    await apiLogout().catch((err) => {
+      console.warn('AuthProvider: Logout API call failed', err);
+    });
+    
+    // Nettoyer l'état et le localStorage
     setUser(null);
     setToken(null);
-    try { localStorage.removeItem('api_token'); } catch {}
+    try { 
+      localStorage.removeItem('api_token');
+      localStorage.removeItem('user'); // ⚠️ IMPORTANT: Supprimer aussi l'utilisateur
+      console.log('AuthProvider: Cleared localStorage');
+    } catch (err) {
+      console.error('AuthProvider: Failed to clear localStorage', err);
+    }
     delete api.defaults.headers.common['Authorization'];
+    console.log('AuthProvider: Logout complete');
   };
 
   return (

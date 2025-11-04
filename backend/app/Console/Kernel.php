@@ -22,8 +22,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // Vérifie toutes les 5 minutes pour détecter les déconnexions
-        $schedule->command('check:capteurs-connection')->everyFiveMinutes();
+        // Dans Laravel 11, les tâches planifiées sont définies dans routes/console.php
+        // Voir routes/console.php pour la configuration du scheduler
     }
 
     /**
