@@ -15,10 +15,14 @@ use App\Http\Controllers\TypeController;
 // ============================================
 // AUTHENTIFICATION
 // ============================================
-Route::post('/login', [AuthController::class, 'login']);
+// NOTE: login is handled by the `web` middleware so the session is available
+// The protected routes (logout/user) remain under auth:sanctum
+// Token-based login (returns a personal access token)
+Route::post('/login', [AuthController::class, 'apiLogin']);
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout']);
+    // revoke token for token-based clients
+    Route::post('/logout', [AuthController::class, 'apiLogout']);
     Route::get('/user', fn(\Illuminate\Http\Request $request) => $request->user());
 });
 
@@ -66,3 +70,9 @@ Route::get('/users/{userId}/capteurs/alertes/nbr', [CapteurController::class, 'a
 
 // ✅ ROUTES MESURES PAR UTILISATEUR (CRITIQUE - CELLE QUI MANQUAIT)
 Route::get('/users/{userId}/capteurs/{capteurId}/mesures', [CapteurController::class, 'getMesuresByUser']);
+
+// ============================================
+// ROUTES ALERTES RÉSOLUES
+// ============================================
+Route::get('/alertes-resolved', [AlerteController::class, 'resolvedAlerts']);
+Route::get('/users/{userId}/alertes-resolved', [AlerteController::class, 'resolvedAlertsByUser']);

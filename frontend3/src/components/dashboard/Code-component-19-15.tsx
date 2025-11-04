@@ -254,13 +254,13 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                   y={capteur.seuil_min} 
                   stroke="orange" 
                   strokeDasharray="5 5" 
-                  label={{ value: `Seuil min: ${capteur.seuil_min}${capteur.unit}`, position: 'topLeft' }}
+                  label={{ value: `Seuil min: ${capteur.seuil_min}${capteur.unit}`, position: 'insideTopLeft' }}
                 />
                 <ReferenceLine 
                   y={capteur.seuil_max} 
                   stroke="red" 
                   strokeDasharray="5 5" 
-                  label={{ value: `Seuil max: ${capteur.seuil_max}${capteur.unit}`, position: 'topLeft' }}
+                  label={{ value: `Seuil max: ${capteur.seuil_max}${capteur.unit}`, position: 'insideTopLeft' }}
                 />
                 
                 {/* Ligne des valeurs */}
@@ -338,9 +338,9 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                   <div className="flex items-center space-x-3">
                     <AlertTriangle className="h-4 w-4 text-red-500" />
                     <div>
-                      <p className="text-sm font-medium">{alerte.message}</p>
+                      <p className="text-sm font-medium">{alerte.type} — {alerte.valeur}{capteur.unit}</p>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(alerte.date_creation), 'dd/MM/yyyy à HH:mm', { locale: fr })}
+                        {format(new Date(alerte.date ?? alerte.created_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}
                       </p>
                     </div>
                   </div>

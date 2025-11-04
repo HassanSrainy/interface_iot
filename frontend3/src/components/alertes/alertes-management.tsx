@@ -1,8 +1,9 @@
 // src/components/alertes/alertes-management.tsx
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "../ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { TablePagination } from "../ui/table-pagination";
 import {
   Search,
   Filter,
@@ -27,12 +28,17 @@ import {
   ArrowUp,
   ArrowDown,
   CheckCircle2,
-  XCircle,
   RefreshCw,
   X,
+  Clock,
+  Zap,
+  TrendingDown,
+  TrendingUp,
+  AlertOctagon,
 } from "lucide-react";
 
-import { getAlertes, Alerte, RawStatut } from "./alertes-api";
+import { Alerte, RawStatut } from "./alertes-api";
+import { useAlertes } from "../../queries/alertes";
 
 /* ---------- Helpers ---------- */
 const isActiveStatus = (s: RawStatut) => s === "actif";
@@ -47,17 +53,18 @@ const isHigh = (t?: string) => {
 const isLow = (t?: string) => {
   const tl = (t ?? "").toLowerCase();
   return (
-    tl.includes("low") ||
+    tl.includes("lower") ||
     tl.includes("bas") ||
-    tl.includes("min") ||
-    tl.includes("lower")
+    tl.includes("min")
   );
 };
 
 /* ---------- Component (no JSX namespace types) ---------- */
 export function AlertesManagement() {
+  // Use React Query hook for automatic role-based filtering
+  const { data: alertesData = [], isLoading, refetch } = useAlertes();
+  
   const [alertes, setAlertes] = useState<Alerte[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -65,36 +72,25 @@ export function AlertesManagement() {
     "all"
   );
   const [filterType, setFilterType] = useState<"all" | string>("all");
+  const [filterCritique, setFilterCritique] = useState<"all" | "critique" | "non-critique">("all");
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Sync alertes from React Query
   useEffect(() => {
-    let mounted = true;
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const data = await getAlertes();
-        if (mounted) setAlertes(data);
-      } catch (err: any) {
-        if (mounted) setError(err?.message ?? "Erreur réseau");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    fetchData();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    if (alertesData) {
+      setAlertes(alertesData);
+    }
+  }, [alertesData]);
 
   const refresh = async () => {
-    setLoading(true);
     setError(null);
     try {
-      const data = await getAlertes();
-      setAlertes(data);
+      await refetch();
     } catch (err: any) {
       setError(err?.message ?? "Erreur réseau");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -103,6 +99,10 @@ export function AlertesManagement() {
     const total = alertes.length;
     const actif = alertes.filter((a) => isActiveStatus(a.statut)).length;
     const inactif = alertes.filter((a) => isInactiveStatus(a.statut)).length;
+    const critiques = alertes.filter((a) => (a as any).critique === true || (a as any).critique === 1).length;
+    const critiquesActives = alertes.filter((a) => 
+      isActiveStatus(a.statut) && ((a as any).critique === true || (a as any).critique === 1)
+    ).length;
 
     const deconn = alertes.filter((a) => isDeconnexion(a.type));
     const high = alertes.filter((a) => isHigh(a.type));
@@ -118,11 +118,162 @@ export function AlertesManagement() {
       total,
       actif,
       inactif,
+      critiques,
+      critiquesActives,
       deconnexion: count(deconn),
       high: count(high),
       low: count(low),
     };
   }, [alertes]);
+
+  const lastUpdated = useMemo(() => {
+    if (!alertes.length) return null;
+    const timestamps = alertes
+      .map((a) => {
+        const date = new Date(a.date);
+        return Number.isNaN(date.getTime()) ? null : date.getTime();
+      })
+      .filter((value): value is number => value !== null);
+    if (!timestamps.length) return null;
+    const latest = new Date(Math.max(...timestamps));
+    return latest.toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [alertes]);
+
+  const statHighlights = useMemo(() => {
+    const activeRate = counts.total ? Math.round((counts.actif / counts.total) * 100) : 0;
+    const resolvedRate = counts.total ? Math.round((counts.inactif / counts.total) * 100) : 0;
+    const criticalRate = counts.total ? Math.round((counts.critiques / counts.total) * 100) : 0;
+
+    return [
+      {
+        id: "total",
+        label: "Total alertes",
+        value: counts.total,
+        description: `${counts.critiques} critiques enregistrées`,
+        trend: `${activeRate}% actuellement actives`,
+        icon: AlertTriangle,
+        iconClass: "bg-red-50 text-red-600",
+        valueClass: "text-slate-900",
+      },
+      {
+        id: "actives",
+        label: "Alertes actives",
+        value: counts.actif,
+        description: "En cours de traitement",
+        trend: `${activeRate}% du volume total`,
+        icon: Zap,
+        iconClass: "bg-amber-50 text-amber-600",
+        valueClass: "text-amber-600",
+      },
+      {
+        id: "critiques",
+        label: "Alertes critiques",
+        value: counts.critiquesActives,
+        description: `${counts.critiques} critiques cumulées`,
+        trend: `${criticalRate}% du total des alertes`,
+        icon: AlertOctagon,
+        iconClass: "bg-red-50 text-red-600",
+        valueClass: "text-red-600",
+      },
+      {
+        id: "resolues",
+        label: "Alertes résolues",
+        value: counts.inactif,
+        description: "Clôturées avec succès",
+        trend: `${resolvedRate}% déjà résolues`,
+        icon: CheckCircle2,
+        iconClass: "bg-emerald-50 text-emerald-600",
+        valueClass: "text-emerald-600",
+      },
+    ];
+  }, [counts]);
+
+  const categoryCards = useMemo(() => [
+    {
+      id: "deconnexion",
+      title: "Déconnexions",
+      description: "Capteurs hors ligne",
+      icon: WifiOff,
+      total: counts.deconnexion.total,
+      actif: counts.deconnexion.actif,
+      inactif: counts.deconnexion.inactif,
+      iconClass: "bg-rose-50 text-rose-600",
+    },
+    {
+      id: "high",
+      title: "Seuil dépassé (max)",
+      description: "Valeurs supérieures au seuil",
+      icon: TrendingUp,
+      total: counts.high.total,
+      actif: counts.high.actif,
+      inactif: counts.high.inactif,
+      iconClass: "bg-orange-50 text-orange-600",
+    },
+    {
+      id: "low",
+      title: "Seuil dépassé (min)",
+      description: "Valeurs inférieures au seuil",
+      icon: TrendingDown,
+      total: counts.low.total,
+      actif: counts.low.actif,
+      inactif: counts.low.inactif,
+      iconClass: "bg-blue-50 text-blue-600",
+    },
+  ], [counts]);
+
+  const renderHeader = () => (
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-3xl font-semibold text-slate-900">Gestion des alertes</h1>
+            <p className="mt-2 text-slate-600">
+              Surveillez, priorisez et clôturez les alertes critiques directement depuis cet espace.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              <AlertOctagon className="h-4 w-4 text-red-600" />
+              {counts.critiquesActives} critiques actives
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-500" />
+              {counts.actif} alertes en cours
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              {counts.inactif} alertes résolues
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={resetFilters}
+              disabled={isLoading}
+              className="whitespace-nowrap"
+            >
+              Réinitialiser les filtres
+            </Button>
+            <Button onClick={refresh} disabled={isLoading} className="whitespace-nowrap">
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              Actualiser
+            </Button>
+          </div>
+          <p className="text-xs text-slate-500 sm:text-right">
+            Dernière mise à jour&nbsp;: {lastUpdated ?? "non disponible"}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
 
   const types = useMemo(() => {
     const s = new Set<string>();
@@ -131,6 +282,13 @@ export function AlertesManagement() {
     });
     return ["all", ...Array.from(s)];
   }, [alertes]);
+
+  const resetFilters = () => {
+    setSearchTerm("");
+    setFilterStatus("all");
+    setFilterType("all");
+    setFilterCritique("all");
+  };
 
   const filteredAlertes = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -152,9 +310,26 @@ export function AlertesManagement() {
 
       const matchesType = filterType === "all" || a.type === filterType;
 
-      return matchesSearch && matchesStatus && matchesType;
+      const isCritique = (a as any).critique === true || (a as any).critique === 1;
+      const matchesCritique =
+        filterCritique === "all" ||
+        (filterCritique === "critique" && isCritique) ||
+        (filterCritique === "non-critique" && !isCritique);
+
+      return matchesSearch && matchesStatus && matchesType && matchesCritique;
     });
-  }, [alertes, searchTerm, filterStatus, filterType]);
+  }, [alertes, searchTerm, filterStatus, filterType, filterCritique]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredAlertes.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedAlertes = filteredAlertes.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterType, filterCritique]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -175,23 +350,23 @@ export function AlertesManagement() {
   const statutDisplay = (s: RawStatut) => {
     if (isActiveStatus(s))
       return (
-        <span className="inline-flex items-center gap-2 text-sm">
-          <CheckCircle2 className="w-4 h-4 text-yellow-600" />
-          <span>Actif</span>
-        </span>
+        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5">
+          <div className="h-2 w-2 rounded-full bg-amber-500"></div>
+          <span className="text-sm font-semibold text-amber-700">Actif</span>
+        </div>
       );
     if (isInactiveStatus(s))
       return (
-        <span className="inline-flex items-center gap-2 text-sm">
-          <XCircle className="w-4 h-4 text-green-600" />
-          <span>Inactif</span>
-        </span>
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <span className="text-sm font-semibold text-emerald-700">Résolu</span>
+        </div>
       );
     return (
-      <span className="inline-flex items-center gap-2 text-sm">
-        <AlertTriangle className="w-4 h-4 text-slate-500" />
-        <span>{s}</span>
-      </span>
+      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5">
+        <AlertTriangle className="h-4 w-4 text-slate-500" />
+        <span className="text-sm font-medium text-slate-700">{s}</span>
+      </div>
     );
   };
 
@@ -226,285 +401,259 @@ export function AlertesManagement() {
     );
   };
 
-  if (loading) return <p>Chargement des alertes...</p>;
-  if (error) return <p className="text-red-500">{error}</p>;
+  if (isLoading) {
+    return (
+      <div className="space-y-8 bg-slate-50 p-6 lg:p-8">
+        {renderHeader()}
+        <Card className="border border-slate-200 bg-white shadow-sm">
+          <CardContent className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <RefreshCw className="h-8 w-8 animate-spin text-slate-400" />
+              <p className="text-sm text-slate-600">Chargement des alertes...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-8 bg-slate-50 p-6 lg:p-8">
+        {renderHeader()}
+        <Card className="border border-red-200 bg-red-50/60">
+          <CardContent className="flex flex-col gap-4 p-6 text-sm text-red-700">
+            <span>{error}</span>
+            <div>
+              <Button variant="outline" onClick={refresh} size="sm">
+                Réessayer
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header row with icon refresh */}
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Tableau de bord — Alertes</h1>
-          <p className="text-sm text-muted-foreground">
-            Vue synthétique : totaux & répartition par type
-          </p>
-        </div>
+    <div className="space-y-8 bg-slate-50 p-6 lg:p-8">
+      {renderHeader()}
 
-        <div className="flex items-center gap-3">
-          {/* Refresh icon-only button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={refresh}
-            aria-label="Rafraîchir les alertes"
-            title="Rafraîchir"
-            className="p-2"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* KPI grid (3 columns desktop) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-3 gap-4">
-        {/* Total */}
-        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <div className="text-xs text-muted-foreground">Total alertes</div>
-            <div className="text-2xl font-semibold">{counts.total}</div>
-            <div className="text-xs text-muted-foreground mt-1">Historique complet</div>
-          </div>
-          <div className="flex flex-col items-center">
-            <div className="p-3 rounded-md bg-red-50">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
-            </div>
-            {/* mini proportion bar */}
-            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div
-                className="h-2 rounded-full"
-                style={{
-                  width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`,
-                  backgroundColor: "#F59E0B",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Actives */}
-        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <div className="text-xs text-muted-foreground">Actives</div>
-            <div className="text-2xl font-semibold text-yellow-600">{counts.actif}</div>
-            <div className="text-xs text-muted-foreground mt-1">À traiter</div>
-          </div>
-          <div className="flex flex-col items-center">
-            <div className="p-3 rounded-md bg-yellow-50">
-              <CheckCircle2 className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div
-                className="h-2 rounded-full"
-                style={{
-                  width: `${counts.total ? (counts.actif / counts.total) * 100 : 0}%`,
-                  backgroundColor: "#F59E0B",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Inactives */}
-        <div className="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <div className="text-xs text-muted-foreground">Inactives</div>
-            <div className="text-2xl font-semibold text-green-600">{counts.inactif}</div>
-            <div className="text-xs text-muted-foreground mt-1">Résolues</div>
-          </div>
-          <div className="flex flex-col items-center">
-            <div className="p-3 rounded-md bg-green-50">
-              <XCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div className="w-24 h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div
-                className="h-2 rounded-full"
-                style={{
-                  width: `${counts.total ? (counts.inactif / counts.total) * 100 : 0}%`,
-                  backgroundColor: "#10B981",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Category cards grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="hover:shadow-lg transition">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <WifiOff className="w-4 h-4 text-red-600" /> Déconnexions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-muted-foreground">Total</div>
-                <div className="text-xl font-semibold">{counts.deconnexion.total}</div>
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Actif</span>
-                  <span className="ml-2 font-medium text-yellow-600">{counts.deconnexion.actif}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-muted-foreground">Inactif</span>
-                  <span className="ml-2 font-medium text-green-600">{counts.deconnexion.inactif}</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              Capteurs n'ayant pas communiqué depuis le timeout.
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowUp className="w-4 h-4 text-orange-600" /> Hors seuil — High
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-muted-foreground">Total</div>
-                <div className="text-xl font-semibold">{counts.high.total}</div>
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Actif</span>
-                  <span className="ml-2 font-medium text-yellow-600">{counts.high.actif}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-muted-foreground">Inactif</span>
-                  <span className="ml-2 font-medium text-green-600">{counts.high.inactif}</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              Mesures supérieures au seuil max.
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowDown className="w-4 h-4 text-blue-600" /> Hors seuil — Low
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-muted-foreground">Total</div>
-                <div className="text-xl font-semibold">{counts.low.total}</div>
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Actif</span>
-                  <span className="ml-2 font-medium text-yellow-600">{counts.low.actif}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-muted-foreground">Inactif</span>
-                  <span className="ml-2 font-medium text-green-600">{counts.low.inactif}</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              Mesures inférieures au seuil min.
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters row with improved search (clear button) */}
-      <div className="flex flex-col md:flex-row gap-4 items-center">
-    {/* 1. Champ de Recherche */}
-    <div className="flex-1 relative">
-        {/* L'icône de recherche est centrée verticalement */}
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          className="pl-9 pr-10"
-          placeholder="Rechercher par matricule, type, valeur, id..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        {searchTerm && (
-            <button
-                aria-label="Effacer"
-                onClick={() => setSearchTerm("")}
-                // Le bouton d'effacement est centré verticalement
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-slate-100"
-                title="Effacer"
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {statHighlights.map((highlight) => {
+          const Icon = highlight.icon;
+          return (
+            <Card
+              key={highlight.id}
+              className="h-full border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
             >
-                <X className="w-4 h-4 text-muted-foreground" />
-            </button>
-        )}
-    </div>
+              <CardContent className="flex h-full flex-col justify-between gap-6 p-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {highlight.label}
+                    </p>
+                    <p className={`text-3xl font-semibold ${highlight.valueClass}`}>{highlight.value}</p>
+                  </div>
+                  <div className={`rounded-full p-3 ${highlight.iconClass}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="space-y-2 text-sm text-slate-600">
+                  <p>{highlight.description}</p>
+                  <p className="font-semibold text-slate-700">{highlight.trend}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
-    {/* 2. Conteneur des Filtres, aligné verticalement avec items-center */}
-    <div className="flex gap-2 items-center">
-        {/* Filtre de Statut */}
-        <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
-            <SelectTrigger className="w-40">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Statut" />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="actif">Actif</SelectItem>
-                <SelectItem value="inactif">Inactif</SelectItem>
-            </SelectContent>
-        </Select>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {categoryCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Card
+              key={card.id}
+              className="h-full border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <CardHeader className="flex flex-row items-start justify-between gap-4 pb-0">
+                <div className="space-y-1">
+                  <CardTitle className="text-base text-slate-800">{card.title}</CardTitle>
+                  <CardDescription>{card.description}</CardDescription>
+                </div>
+                <div className={`rounded-lg p-2 ${card.iconClass}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5 pt-6">
+                <div className="text-3xl font-semibold text-slate-900">{card.total}</div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Actives</p>
+                    <p className="text-lg font-semibold text-amber-700">{card.actif}</p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Résolues</p>
+                    <p className="text-lg font-semibold text-emerald-700">{card.inactif}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
-        {/* Filtre de Type */}
-        <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
-            <SelectTrigger className="w-48">
-                <SelectValue placeholder="Type d'alerte" />
-            </SelectTrigger>
-            <SelectContent>
-                {types.map((t) => (
-                    <SelectItem key={t} value={t}>
-                        {t === "all" ? "Tous les types" : t}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
-    </div>
-</div>
-
-      {/* Tabs + table */}
-      <Tabs defaultValue="all" className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Alertes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <TabsList>
-                <TabsTrigger value="all">Toutes ({counts.total})</TabsTrigger>
-                <TabsTrigger value="actif">Actives ({counts.actif})</TabsTrigger>
-                <TabsTrigger value="inactif">Inactives ({counts.inactif})</TabsTrigger>
-              </TabsList>
-            </div>
-
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader className="flex flex-col gap-2 pb-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <TabsContent value="all">
-                <AlertesTable alertes={filteredAlertes} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
-              </TabsContent>
-
-              <TabsContent value="actif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
-              </TabsContent>
-
-              <TabsContent value="inactif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
-              </TabsContent>
+              <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                <Filter className="h-5 w-5" />
+                Filtres intelligents
+              </CardTitle>
+              <CardDescription>
+                Affinez la liste selon le statut, le type et la criticité des alertes
+              </CardDescription>
             </div>
-          </CardContent>
-        </Card>
-      </Tabs>
+            <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+              {filteredAlertes.length} résultat{filteredAlertes.length > 1 ? 's' : ''}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 pt-6">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <Input
+              className="h-12 border-2 pl-12 pr-12 text-base focus:border-slate-900 focus:ring-0"
+              placeholder="Rechercher par matricule, type, valeur ou ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100"
+                aria-label="Effacer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={filterStatus} onValueChange={(v: any) => setFilterStatus(v)}>
+              <SelectTrigger className="h-11 min-w-[12rem] border-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <SelectValue placeholder="Statut" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                    Tous les statuts
+                  </div>
+                </SelectItem>
+                <SelectItem value="actif">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
+                    Actif
+                  </div>
+                </SelectItem>
+                <SelectItem value="inactif">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                    Inactif
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={filterType} onValueChange={(v: any) => setFilterType(v)}>
+              <SelectTrigger className="h-11 min-w-[14rem] border-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <SelectValue placeholder="Type d'alerte" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {types.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t === "all" ? "Tous les types" : t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterCritique} onValueChange={(v: any) => setFilterCritique(v)}>
+              <SelectTrigger className="h-11 min-w-[14rem] border-2">
+                <div className="flex items-center gap-2">
+                  <AlertOctagon className="h-4 w-4 text-red-600" />
+                  <SelectValue placeholder="Criticité" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les alertes</SelectItem>
+                <SelectItem value="critique">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-600"></span>
+                    Critiques seulement
+                  </div>
+                </SelectItem>
+                <SelectItem value="non-critique">Non critiques</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="ml-auto text-slate-600 transition-colors hover:text-slate-900"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Réinitialiser
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+        <CardHeader className="border-b bg-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-xl">Liste des Alertes</CardTitle>
+              <CardDescription className="mt-1">
+                Détails complets de toutes les alertes du système
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="text-sm px-3 py-1.5">
+              Page {currentPage} / {totalPages}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <AlertesTable
+            alertes={paginatedAlertes}
+            formatDate={formatDate}
+            statutDisplay={statutDisplay}
+            typeDisplay={typeDisplay}
+          />
+        </CardContent>
+        <div className="border-t bg-slate-50 px-6 py-4">
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredAlertes.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onItemsPerPageChange={setItemsPerPage}
+            itemLabel="alertes"
+          />
+        </div>
+      </Card>
     </div>
   );
 }
@@ -519,44 +668,149 @@ function AlertesTable(props: {
   const { alertes, formatDate, statutDisplay, typeDisplay } = props;
 
   return (
-    <Card>
-      <CardContent>
-        <Table>
-          <TableHeader>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                Capteur
+              </div>
+            </TableHead>
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-orange-500" />
+                Type d'Alerte
+              </div>
+            </TableHead>
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-purple-500" />
+                Valeur
+              </div>
+            </TableHead>
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <AlertOctagon className="w-4 h-4 text-red-600" />
+                Criticité
+              </div>
+            </TableHead>
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-yellow-500" />
+                Statut
+              </div>
+            </TableHead>
+            <TableHead className="font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-500" />
+                Date & Heure
+              </div>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {alertes.length === 0 && (
             <TableRow>
-              <TableHead>Capteur</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Valeur</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Date</TableHead>
+              <TableCell colSpan={6} className="h-32">
+                <div className="flex flex-col items-center justify-center text-center gap-3">
+                  <div className="rounded-full bg-slate-100 p-4">
+                    <AlertTriangle className="h-8 w-8 text-slate-400" />
+                  </div>
+                  <div>
+                    <p className="text-base font-medium text-slate-700">Aucune alerte trouvée</p>
+                    <p className="mt-1 text-sm text-slate-500">Aucune donnée ne correspond à vos filtres</p>
+                  </div>
+                </div>
+              </TableCell>
             </TableRow>
-          </TableHeader>
+          )}
 
-          <TableBody>
-            {alertes.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
-                  Aucune alerte trouvée.
-                </TableCell>
-              </TableRow>
-            )}
-
-            {alertes.map((a) => (
-              <TableRow key={a.id}>
+          {alertes.map((a) => {
+            const isCritique = (a as any).critique === true || (a as any).critique === 1;
+            return (
+              <TableRow 
+                key={a.id} 
+                className={`transition-colors duration-200 ${isCritique ? "bg-red-50/80" : ""} hover:bg-slate-50`}
+              >
+                {/* Capteur */}
                 <TableCell className="font-medium">
-                  {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+                      <span className="text-xs font-bold text-blue-700">
+                        {a.capteur?.matricule?.substring(0, 2).toUpperCase() ?? "NA"}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-slate-900">
+                        {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        ID: {a.capteur_id ?? "N/A"}
+                      </div>
+                    </div>
+                  </div>
                 </TableCell>
-                <TableCell>{typeDisplay(a.type)}</TableCell>
-                <TableCell>{a.valeur ?? "—"}</TableCell>
+
+                {/* Type */}
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    {typeDisplay(a.type)}
+                  </div>
+                </TableCell>
+
+                {/* Valeur */}
+                <TableCell>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="font-mono text-sm font-semibold text-slate-900">
+                      {a.valeur ?? "—"}
+                    </div>
+                    {(a.capteur as any)?.unite && (
+                      <div className="text-xs text-slate-500 font-medium">
+                        {(a.capteur as any).unite}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* Critique */}
+                <TableCell>
+                  {isCritique ? (
+                    <div 
+                      className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-100 px-3 py-1.5 text-red-700"
+                    >
+                      <AlertOctagon className="h-4 w-4" />
+                      <span className="text-xs font-bold uppercase tracking-wide">Critique</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-slate-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="text-xs font-medium">Normal</span>
+                    </div>
+                  )}
+                </TableCell>
+
+                {/* Statut */}
                 <TableCell>{statutDisplay(a.statut)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatDate(a.date)}
+
+                {/* Date */}
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-slate-100 rounded-md">
+                      <Clock className="w-3.5 h-3.5 text-slate-600" />
+                    </div>
+                    <div className="text-sm text-slate-600 font-medium">
+                      {formatDate(a.date)}
+                    </div>
+                  </div>
                 </TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

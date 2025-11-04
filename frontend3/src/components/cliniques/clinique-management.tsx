@@ -2,12 +2,16 @@ import React, { useEffect, useState } from "react";
 import * as cliniquesApi from "./cliniques-api";
 import * as floorsApi from "../floors/floors-api";
 import * as servicesApi from "../services/services-api";
+import { useCliniques } from "../../queries/cliniques";
 
 import EntityModal from "./EntityModal";
+import { PageLayout } from "../layout/PageLayout";
+import { TablePagination } from "../ui/table-pagination";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Card, CardHeader, CardContent } from "../ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +25,7 @@ import {
 import { 
   Trash2, Edit, Plus, ChevronDown, ChevronRight, 
   Wifi, WifiOff, RefreshCw, Building2, Layers, 
-  Briefcase, Activity 
+  Briefcase, Activity, Search
 } from "lucide-react";
 
 type Clinique = cliniquesApi.Clinique;
@@ -35,6 +39,9 @@ type Capteur = cliniquesApi.Capteur & Partial<{
 }>;
 
 export function CliniqueManagement(): React.ReactElement {
+  // Use React Query hook for automatic role-based filtering
+  const { data: cliniquesData = [], isLoading: queryLoading, refetch } = useCliniques();
+  
   const [cliniques, setCliniques] = useState<Clinique[]>([]);
   const [floorsMap, setFloorsMap] = useState<Record<number, Floor[]>>({});
   const [servicesMap, setServicesMap] = useState<Record<number, Service[]>>({});
@@ -56,24 +63,63 @@ export function CliniqueManagement(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Search & filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<"nom" | "ville">("nom");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1); // Changed from pageIndex (0-based) to currentPage (1-based)
+
+  // Computed: filtered and sorted cliniques
+  const filteredCliniques = React.useMemo(() => {
+    if (!searchTerm.trim()) return cliniques;
+    const term = searchTerm.toLowerCase();
+    return cliniques.filter(c => 
+      c.nom.toLowerCase().includes(term) ||
+      ((c as any).ville ?? "").toLowerCase().includes(term) ||
+      ((c as any).adresse ?? "").toLowerCase().includes(term)
+    );
+  }, [cliniques, searchTerm]);
+
+  const sortedCliniques = React.useMemo(() => {
+    const sorted = [...filteredCliniques];
+    sorted.sort((a, b) => {
+      let aVal = "", bVal = "";
+      if (sortKey === "nom") {
+        aVal = a.nom || "";
+        bVal = b.nom || "";
+      } else if (sortKey === "ville") {
+        aVal = (a as any).ville || "";
+        bVal = (b as any).ville || "";
+      }
+      const comparison = aVal.localeCompare(bVal);
+      return sortDir === "asc" ? comparison : -comparison;
+    });
+    return sorted;
+  }, [filteredCliniques, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedCliniques.length / pageSize));
+  const cliniquesPage = React.useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedCliniques.slice(start, start + pageSize);
+  }, [sortedCliniques, currentPage, pageSize]);
+
+  // Reset to first page when filters change
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(Math.max(1, totalPages));
+    }
+  }, [currentPage, totalPages]);
+
+  // Sync cliniques from React Query
   useEffect(() => {
-    (async () => {
-      await reloadCliniques();
-    })();
-  }, []);
+    if (cliniquesData) {
+      setCliniques(cliniquesData);
+    }
+  }, [cliniquesData]);
 
   const reloadCliniques = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await cliniquesApi.getCliniques();
-      setCliniques(data);
-    } catch (err: any) {
-      console.error("Erreur chargement cliniques:", err);
-      setError(err?.message ?? "Erreur réseau");
-    } finally {
-      setLoading(false);
-    }
+    await refetch();
   };
 
   const refreshAll = async () => {
@@ -83,8 +129,7 @@ export function CliniqueManagement(): React.ReactElement {
       setFloorsMap({});
       setServicesMap({});
       setCapteursMap({});
-      const data = await cliniquesApi.getCliniques();
-      setCliniques(data);
+      await refetch();
     } catch (err: any) {
       console.error("Erreur refresh:", err);
       setError(err?.message ?? "Erreur réseau");
@@ -313,34 +358,28 @@ export function CliniqueManagement(): React.ReactElement {
       )
     );
 
-  return h("div", { className: "min-h-screen bg-slate-50 p-4 md:p-6" },
-    h("div", { className: "max-w-7xl mx-auto space-y-6" },
-      // Header
-      h("div", { className: "flex items-center justify-between pb-4 border-b border-slate-200" },
-        h("div", null,
-          h("h1", { className: "text-3xl font-bold text-slate-900" }, "Gestion des Cliniques"),
-          h("p", { className: "text-slate-600 mt-1" }, "Gérez votre infrastructure médicale")
-        ),
-        h("div", { className: "flex items-center gap-3" },
-          h(Button, {
-            variant: "ghost",
-            size: "sm",
-            onClick: () => refreshAll(),
-            title: "Rafraîchir",
-            "aria-label": "Rafraîchir les cliniques",
-            disabled: loading,
-            className: "p-2"
-          }, h(RefreshCw, { className: `w-4 h-4 ${loading ? "animate-spin" : ""}` })),
+  return h(PageLayout, { 
+    title: "Gestion des Cliniques",
+    description: "Gérez votre infrastructure médicale",
+    actions: h("div", { className: "flex items-center gap-3" },
+      h(Button, {
+        variant: "ghost",
+        size: "sm",
+        onClick: () => refreshAll(),
+        title: "Rafraîchir",
+        "aria-label": "Rafraîchir les cliniques",
+        disabled: loading
+      }, h(RefreshCw, { className: `w-4 h-4 ${loading ? "animate-spin" : ""}` })),
 
-          h(Button, { 
-            onClick: () => openCreateModal("clinique"), 
-            disabled: loading 
-          }, 
-            h(Plus, { className: "w-4 h-4 mr-2" }), 
-            "Nouvelle Clinique"
-          )
-        )
-      ),
+      h(Button, { 
+        onClick: () => openCreateModal("clinique"), 
+        disabled: loading 
+      }, 
+        h(Plus, { className: "w-4 h-4 mr-2" }), 
+        "Nouvelle Clinique"
+      )
+    ),
+    children: h("div", { className: "space-y-6" },
 
       // Error
       error && h("div", { 
@@ -349,15 +388,78 @@ export function CliniqueManagement(): React.ReactElement {
         "aria-live": "polite" 
       }, error),
 
+      // Search & Filter Controls
+      h(Card, { className: "bg-white shadow-sm border-slate-200" },
+        h(CardContent, { className: "p-4" },
+          h("div", { className: "flex flex-wrap gap-3 items-center" },
+            // Search input
+            h("div", { className: "relative flex-1 min-w-[250px]" },
+              h(Search, { className: "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" }),
+              h(Input, {
+                placeholder: "Rechercher par nom, ville, adresse...",
+                value: searchTerm,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value),
+                className: "pl-10"
+              })
+            ),
+            
+            // Sort by selector
+            h("div", { className: "flex items-center gap-2" },
+              h("span", { className: "text-sm text-slate-600 whitespace-nowrap" }, "Trier par:"),
+              h(Select, {
+                value: sortKey,
+                onValueChange: (val: string) => setSortKey(val as "nom" | "ville")
+              },
+                h(SelectTrigger, { className: "w-[140px]" },
+                  h(SelectValue, null)
+                ),
+                h(SelectContent, null,
+                  h(SelectItem, { value: "nom" }, "Nom"),
+                  h(SelectItem, { value: "ville" }, "Ville")
+                )
+              )
+            ),
+            
+            // Sort direction
+            h("div", { className: "flex items-center gap-2" },
+              h("span", { className: "text-sm text-slate-600 whitespace-nowrap" }, "Ordre:"),
+              h(Select, {
+                value: sortDir,
+                onValueChange: (val: string) => setSortDir(val as "asc" | "desc")
+              },
+                h(SelectTrigger, { className: "w-[120px]" },
+                  h(SelectValue, null)
+                ),
+                h(SelectContent, null,
+                  h(SelectItem, { value: "asc" }, "Croissant"),
+                  h(SelectItem, { value: "desc" }, "Décroissant")
+                )
+              )
+            )
+          )
+        )
+      ),
+
       // Liste cliniques
       h("div", { className: "space-y-4" },
-        cliniques.length === 0 && !loading && h("div", { className: "text-center py-16" },
-          h(Building2, { className: "w-16 h-16 mx-auto text-slate-300 mb-4" }),
-          h("p", { className: "text-lg font-medium text-slate-700" }, "Aucune clinique"),
-          h("p", { className: "text-sm text-slate-500 mt-1" }, "Commencez par créer votre première clinique")
+        loading && sortedCliniques.length === 0 && h("div", { className: "text-center py-16" },
+          h("div", { className: "flex items-center justify-center gap-2 text-slate-500" },
+            h(RefreshCw, { className: "w-5 h-5 animate-spin" }),
+            h("span", null, "Chargement des cliniques...")
+          )
         ),
 
-        ...cliniques.map((c) => h(Card, { 
+        sortedCliniques.length === 0 && !loading && h("div", { className: "text-center py-16" },
+          h(Building2, { className: "w-16 h-16 mx-auto text-slate-300 mb-4" }),
+          h("p", { className: "text-lg font-medium text-slate-700" }, 
+            searchTerm ? "Aucune clinique trouvée" : "Aucune clinique"
+          ),
+          h("p", { className: "text-sm text-slate-500 mt-1" }, 
+            searchTerm ? "Essayez une autre recherche" : "Commencez par créer votre première clinique"
+          )
+        ),
+
+        ...cliniquesPage.map((c) => h(Card, { 
           key: c.id, 
           className: "bg-white shadow-md hover:shadow-lg transition-all border-slate-200" 
         },
@@ -579,37 +681,48 @@ export function CliniqueManagement(): React.ReactElement {
                 )
           )
         ))
-      )
-    ),
+      ),
 
-    // Modal
-    h(EntityModal, {
-      open: modalOpen,
-      title: modalMode === "create" ? `Créer ${modalEntity}` : `Modifier ${modalEntity}`,
-      fields: modalEntity === "clinique"
-        ? [
-            { name: "nom", label: "Nom", placeholder: "Nom clinique" }, 
-            { name: "adresse", label: "Adresse", placeholder: "Adresse" }, 
-            { name: "ville", label: "Ville", placeholder: "Ville" }
-          ]
-        : modalEntity === "floor"
-        ? [
-            { name: "niveau", label: "Niveau", placeholder: "0 pour Rez-de-chaussée, 1, 2, ...", type: "number" }, 
-            { name: "nom", label: "Nom (optionnel)", placeholder: "Laisser vide pour nom par défaut" }
-          ]
-        : modalEntity === "service"
-        ? [
-            { name: "nom", label: "Nom service", placeholder: "Nom service" }
-          ]
-        : [],
-      initialData: modalInitial,
-      onClose: () => setModalOpen(false),
-      onSave: async (payload: Record<string, any>) => { 
-        await handleModalSave(payload); 
-        setModalOpen(false); 
-      }
-    })
-  );
+      // Pagination
+      sortedCliniques.length > 0 && h(TablePagination, {
+        currentPage: currentPage,
+        totalPages: totalPages,
+        totalItems: sortedCliniques.length,
+        itemsPerPage: pageSize,
+        onPageChange: setCurrentPage,
+        onItemsPerPageChange: setPageSize,
+        itemLabel: "cliniques"
+      }),
+
+      // Modal
+      h(EntityModal, {
+        open: modalOpen,
+        title: modalMode === "create" ? `Créer ${modalEntity}` : `Modifier ${modalEntity}`,
+        fields: modalEntity === "clinique"
+          ? [
+              { name: "nom", label: "Nom", placeholder: "Nom clinique" }, 
+              { name: "adresse", label: "Adresse", placeholder: "Adresse" }, 
+              { name: "ville", label: "Ville", placeholder: "Ville" }
+            ]
+          : modalEntity === "floor"
+          ? [
+              { name: "niveau", label: "Niveau", placeholder: "0 pour Rez-de-chaussée, 1, 2, ...", type: "number" }, 
+              { name: "nom", label: "Nom (optionnel)", placeholder: "Laisser vide pour nom par défaut" }
+            ]
+          : modalEntity === "service"
+          ? [
+              { name: "nom", label: "Nom service", placeholder: "Nom service" }
+            ]
+          : [],
+        initialData: modalInitial,
+        onClose: () => setModalOpen(false),
+        onSave: async (payload: Record<string, any>) => { 
+          await handleModalSave(payload); 
+          setModalOpen(false); 
+        }
+      })
+    )
+  });
 }
 
 export default CliniqueManagement;

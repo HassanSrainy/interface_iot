@@ -99,15 +99,48 @@ export function ClinicOverview({ capteurs = [], alertes = [], cliniquesData }: C
   const countsByClinic = useMemo(() => {
     const map = new Map<string, number>();
     if (!alertes || alertes.length === 0 || baseClinics.length === 0) return map;
+    
+    // Build comprehensive capToClinic mapping from all available capteurs
     const capToClinic = new Map<string | number, string>();
-    for (const c of baseClinics) for (const cp of c.capteurs) capToClinic.set((cp as any).id, c.id);
+    
+    // First, map from baseClinics capteurs
+    for (const c of baseClinics) {
+      for (const cp of c.capteurs) {
+        const capId = (cp as any).id;
+        if (capId != null) {
+          capToClinic.set(capId, c.id);
+          capToClinic.set(String(capId), c.id); // Also add string version
+        }
+      }
+    }
 
+    // Count active alerts per clinic
     for (const a of alertes) {
       if (!isAlerteActive(a)) continue;
+      
+      // Try multiple ways to get capteur reference
       const capRef = (a as any).capteur ?? (a as any).capteur_id ?? null;
       const capId = typeof capRef === "object" ? capRef?.id : capRef;
-      const clinicId = capId != null ? capToClinic.get(capId) ?? null : null;
-      if (clinicId) map.set(clinicId, (map.get(clinicId) ?? 0) + 1);
+      
+      if (capId == null) continue;
+      
+      // Try both number and string versions
+      let clinicId = capToClinic.get(capId) ?? capToClinic.get(String(capId)) ?? null;
+      
+      // If not found in map but capteur object exists with nested clinic data
+      if (!clinicId && typeof capRef === "object" && capRef) {
+        const nestedClinicId = capRef?.service?.floor?.clinique?.id ?? 
+                              capRef?.service?.floor?.clinique_id ??
+                              capRef?.clinique?.id ??
+                              capRef?.clinique_id;
+        if (nestedClinicId != null) {
+          clinicId = String(nestedClinicId);
+        }
+      }
+      
+      if (clinicId) {
+        map.set(String(clinicId), (map.get(String(clinicId)) ?? 0) + 1);
+      }
     }
     return map;
   }, [alertes, baseClinics]);

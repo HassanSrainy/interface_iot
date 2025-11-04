@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../ui/alert-dialog";
+import { TablePagination } from "../ui/table-pagination";
 import { Plus, Edit, Trash2, RefreshCw } from "lucide-react";
 import type { AxiosError } from "axios";
 
@@ -67,6 +68,10 @@ export function UserManagement() {
   
   // ✅ NOUVEAU : État pour l'utilisateur connecté
   const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const [formData, setFormData] = useState<UserFormData>({
     name: "",
@@ -229,8 +234,12 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">Gestion des Utilisateurs</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Gestion des Utilisateurs</h1>
+          <p className="text-slate-600 mt-1">Gérez les utilisateurs et leurs accès aux cliniques</p>
+        </div>
 
         <div className="flex items-center gap-3">
           <Button
@@ -337,7 +346,12 @@ export function UserManagement() {
         </div>
       </div>
 
-      {globalError && <div className="text-sm text-red-600" role="status" aria-live="polite">{globalError}</div>}
+      {/* Global Error */}
+      {globalError && (
+        <div className="p-4 bg-red-50 text-red-700 rounded-md border border-red-200">
+          {globalError}
+        </div>
+      )}
 
       {/* Table */}
       <Card>
@@ -358,14 +372,21 @@ export function UserManagement() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5}>Chargement...</TableCell>
+                  <TableCell colSpan={5} className="text-center py-12">
+                    <div className="flex items-center justify-center gap-2 text-slate-500">
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span>Chargement des utilisateurs...</span>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5}>Aucun utilisateur.</TableCell>
                 </TableRow>
               ) : (
-                users.map((u) => (
+                users
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((u) => (
                   <TableRow key={u.id}>
                     <TableCell>{u.name}</TableCell>
                     <TableCell>{u.email}</TableCell>
@@ -412,6 +433,15 @@ export function UserManagement() {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(users.length / itemsPerPage)}
+            totalItems={users.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onItemsPerPageChange={setItemsPerPage}
+            itemLabel="utilisateurs"
+          />
         </CardContent>
       </Card>
     </div>

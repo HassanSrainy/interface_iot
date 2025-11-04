@@ -54,6 +54,7 @@ export interface Capteur {
   seuil_max: number
   adresse_ip: string
   adresse_mac: string
+  unite?: string
   created_at: Date
   updated_at: Date
   famille?: Famille

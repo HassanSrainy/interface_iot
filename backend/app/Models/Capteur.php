@@ -17,7 +17,8 @@ class Capteur extends Model
         'seuil_max',
         'adresse_ip',
         'adresse_mac',
-        'status', // <-- nouveau champ
+        'status',
+        'unite',
     ];
     
     protected $casts = [

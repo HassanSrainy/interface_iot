@@ -32,30 +32,62 @@ class MesureController extends Controller
         $capteur->status = 'online';
         $capteur->save();
 
-        // Désactiver les alertes de déconnexion actives
+        // Désactiver les alertes de déconnexion actives (résolution)
         Alerte::where('capteur_id', $capteur->id)
             ->where('type', 'deconnexion')
             ->where('statut', 'actif')
-            ->update(['statut' => 'inactif']);
+            ->update([
+                'statut' => 'inactif',
+                'date_resolution' => now()
+            ]);
 
         // Déterminer le type d'alerte selon le dépassement de seuil
         $alerteType = null;
+        $valeurHorsSeuil = false;
+        
         if ($capteur->seuil_min !== null && $validated['valeur'] < $capteur->seuil_min) {
             $alerteType = 'lower';
+            $valeurHorsSeuil = true;
         } elseif ($capteur->seuil_max !== null && $validated['valeur'] > $capteur->seuil_max) {
             $alerteType = 'high';
+            $valeurHorsSeuil = true;
         }
 
-        // Créer l'alerte si nécessaire
-        if ($alerteType) {
-            Alerte::create([
-                'capteur_id' => $capteur->id,
-                'mesure_id' => $mesure->id,
-                'type' => $alerteType,
-                'valeur' => $validated['valeur'],
-                'statut' => 'actif', // alerte active
-                'date' => now(),
-            ]);
+        if ($valeurHorsSeuil) {
+            // Vérifier s'il existe déjà une alerte active du même type
+            $alerteExistante = Alerte::where('capteur_id', $capteur->id)
+                ->where('type', $alerteType)
+                ->where('statut', 'actif')
+                ->orderBy('created_at', 'desc')
+                ->first();
+
+            if ($alerteExistante) {
+                // Deuxième mesure consécutive hors seuil → passer à CRITIQUE
+                if (!$alerteExistante->critique) {
+                    $alerteExistante->critique = true;
+                    $alerteExistante->save();
+                }
+            } else {
+                // Première mesure hors seuil → créer alerte NON critique
+                Alerte::create([
+                    'capteur_id' => $capteur->id,
+                    'mesure_id' => $mesure->id,
+                    'type' => $alerteType,
+                    'valeur' => $validated['valeur'],
+                    'statut' => 'actif',
+                    'critique' => false, // première occurrence = non critique
+                    'date' => now(),
+                ]);
+            }
+        } else {
+            // Mesure dans les seuils → résoudre les alertes de seuil actives
+            Alerte::where('capteur_id', $capteur->id)
+                ->whereIn('type', ['high', 'lower'])
+                ->where('statut', 'actif')
+                ->update([
+                    'statut' => 'inactif',
+                    'date_resolution' => now()
+                ]);
         }
 
         return response()->json($mesure, 201);

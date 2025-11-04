@@ -37,6 +37,7 @@ class CapteurController extends Controller
             'seuil_min' => 'nullable|numeric',
             'seuil_max' => 'nullable|numeric',
             'adresse_ip' => 'nullable|ip',
+            'unite' => 'nullable|string|max:20',
             // Regex MAC: accepte XX:XX:XX:XX:XX:XX ou XX-XX-... ou XXXXXXXXXXXX
             'adresse_mac' => ['nullable', 'regex:/^([0-9A-Fa-f]{2}([:-]?)){5}[0-9A-Fa-f]{2}$/'],
         ]);
@@ -92,6 +93,7 @@ class CapteurController extends Controller
             'seuil_min' => 'nullable|numeric',
             'seuil_max' => 'nullable|numeric',
             'adresse_ip' => 'nullable|ip',
+            'unite' => 'nullable|string|max:20',
             'adresse_mac' => ['nullable', 'regex:/^([0-9A-Fa-f]{2}([:-]?)){5}[0-9A-Fa-f]{2}$/'],
         ]);
 

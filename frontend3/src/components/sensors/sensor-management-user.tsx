@@ -1,11 +1,12 @@
 // src/components/sensors/sensor-management-user.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import {
   AlertDialog,
@@ -17,10 +18,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '../ui/alert-dialog';
+import { ModernPagination } from '../ui/modern-pagination';
 import { Plus, Edit, Trash2, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import type { AxiosError } from 'axios';
+import { UnitSelector } from './UnitSelector';
+import { UnitDisplay } from './UnitDisplay';
 
-import useAuth from '../../hooks/useAuth';
+import { useAuth } from '../../context/AuthProvider';
 
 // API clients - nécessite que tu aies ajouté getSensorsByUser/getCliniquesByUser
 import {
@@ -52,6 +56,7 @@ export interface Sensor {
   seuil_max?: number | null;
   adresse_ip?: string | null;
   adresse_mac?: string | null;
+  unite?: string | null;
   famille?: Famille | null;
   service?: Service | null;
   mesures?: Mesure[];
@@ -72,6 +77,7 @@ interface SensorFormData {
   seuil_max: number | '';
   adresse_ip: string;
   adresse_mac: string;
+  unite: string;
   famille_id: number | '';
   clinique_id: number | '';
   floor_id: number | '';
@@ -105,6 +111,7 @@ export function SensorManagementUser() {
     seuil_max: 100,
     adresse_ip: '',
     adresse_mac: '',
+    unite: '',
     famille_id: '',
     clinique_id: '',
     floor_id: '',
@@ -125,6 +132,97 @@ export function SensorManagementUser() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // --------- search / filter / sort / pagination / group-by state
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline'>('all');
+  const [filterFamily, setFilterFamily] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<'matricule' | 'famille' | 'service' | 'status' | 'derniere_mesure'>('matricule');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageIndex, setPageIndex] = useState<number>(0);
+  const [groupBy, setGroupBy] = useState<'none' | 'famille' | 'service' | 'clinique'>('none');
+
+  const familyOptions = useMemo(() => {
+    const s = new Set<string>();
+    sensors.forEach(sen => {
+      const fam = sen.famille?.famille ?? '';
+      if (fam) s.add(fam);
+    });
+    return ['all', ...Array.from(s)];
+  }, [sensors]);
+
+  const filteredSensors = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return sensors.filter(s => {
+      if (filterStatus !== 'all') {
+        const st = String(s.status ?? '').toLowerCase();
+        if (filterStatus === 'online' && st !== 'online') return false;
+        if (filterStatus === 'offline' && st === 'online') return false;
+      }
+      if (filterFamily !== 'all') {
+        const fam = s.famille?.famille ?? '';
+        if (fam !== filterFamily) return false;
+      }
+      if (q === '') return true;
+      return (
+        String(s.matricule ?? '').toLowerCase().includes(q) ||
+        String(s.famille?.famille ?? '').toLowerCase().includes(q) ||
+        String(s.service?.nom ?? '').toLowerCase().includes(q) ||
+        String(s.service?.floor?.clinique?.nom ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [sensors, searchTerm, filterStatus, filterFamily]);
+
+  const sortedSensors = useMemo(() => {
+    const arr = [...filteredSensors];
+    arr.sort((a, b) => {
+      let va: any = a[sortKey as keyof Sensor];
+      let vb: any = b[sortKey as keyof Sensor];
+      if (sortKey === 'famille') {
+        va = a.famille?.famille ?? '';
+        vb = b.famille?.famille ?? '';
+      }
+      if (sortKey === 'service') {
+        va = a.service?.nom ?? '';
+        vb = b.service?.nom ?? '';
+      }
+      if (sortKey === 'derniere_mesure') {
+        va = a.derniere_mesure?.date_mesure ?? '';
+        vb = b.derniere_mesure?.date_mesure ?? '';
+      }
+      if (va == null) va = '';
+      if (vb == null) vb = '';
+
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      return sortDir === 'asc' ? (Number(va) - Number(vb)) : (Number(vb) - Number(va));
+    });
+    return arr;
+  }, [filteredSensors, sortKey, sortDir]);
+
+  const groupedSensors = useMemo(() => {
+    if (groupBy === 'none') return { '': sortedSensors };
+
+    const groups: Record<string, Sensor[]> = {};
+    sortedSensors.forEach(s => {
+      let key = '';
+      if (groupBy === 'famille') key = s.famille?.famille ?? 'Sans famille';
+      if (groupBy === 'service') key = s.service?.nom ?? 'Sans service';
+      if (groupBy === 'clinique') key = s.service?.floor?.clinique?.nom ?? 'Sans clinique';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    });
+    return groups;
+  }, [sortedSensors, groupBy]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedSensors.length / pageSize));
+  const sensorsPage = useMemo(() => {
+    if (groupBy !== 'none') return sortedSensors; // no pagination when grouped
+    const start = pageIndex * pageSize;
+    return sortedSensors.slice(start, start + pageSize);
+  }, [sortedSensors, pageIndex, pageSize, groupBy]);
 
   // Redirect if no user (optional - UserPage already handles this)
   useEffect(() => {
@@ -366,6 +464,7 @@ export function SensorManagementUser() {
       seuil_max: sensor.seuil_max ?? 100,
       adresse_ip: sensor.adresse_ip ?? '',
       adresse_mac: sensor.adresse_mac ?? '',
+      unite: sensor.unite ?? '',
       famille_id: sensor.famille?.id ?? '',
       clinique_id: (cliniqueIdFromSensor as number) ?? '',
       floor_id: sensor.service?.floor?.id ?? '',
@@ -389,6 +488,7 @@ export function SensorManagementUser() {
       seuil_max: 100,
       adresse_ip: '',
       adresse_mac: '',
+      unite: '',
       famille_id: '',
       clinique_id: '',
       floor_id: '',
@@ -569,6 +669,16 @@ export function SensorManagementUser() {
                   <Input id="seuil_max" type="number" value={formData.seuil_max} onChange={e => setFormData({ ...formData, seuil_max: e.target.value === '' ? '' : Number(e.target.value) })} />
                   {errors.seuil_max && <p className="text-xs text-red-600 mt-1">{errors.seuil_max[0]}</p>}
                 </div>
+
+                <div className="space-y-1 col-span-2">
+                  <Label htmlFor="unite">Unité de mesure</Label>
+                  <UnitSelector
+                    value={formData.unite}
+                    onChange={(value) => setFormData({ ...formData, unite: value })}
+                    placeholder="Sélectionner une unité (ex: °C, %, bar...)"
+                  />
+                  {errors.unite && <p className="text-xs text-red-600 mt-1">{errors.unite[0]}</p>}
+                </div>
               </div>
 
               {formError && <div className="mt-3 text-sm text-red-600">{formError}</div>}
@@ -584,7 +694,84 @@ export function SensorManagementUser() {
 
       {globalError && <div className="text-sm text-red-600" role="status" aria-live="polite">{globalError}</div>}
 
-      <Card>
+      {/* Search / Filter / Sort / Group-By Controls */}
+      <Card className="mb-4">
+        <CardContent className="pt-6">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 space-y-3">
+              <Input
+                placeholder="Rechercher par matricule, famille, service, clinique..."
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setPageIndex(0); }}
+              />
+              <div className="flex gap-2">
+                <Select value={filterStatus} onValueChange={(v: any) => { setFilterStatus(v); setPageIndex(0); }}>
+                  <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous statuts</SelectItem>
+                    <SelectItem value="online">En ligne</SelectItem>
+                    <SelectItem value="offline">Hors ligne</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={filterFamily} onValueChange={(v: any) => { setFilterFamily(v); setPageIndex(0); }}>
+                  <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {familyOptions.map(f => (
+                      <SelectItem key={f} value={f}>{f === 'all' ? 'Toutes familles' : f}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Select value={sortKey} onValueChange={(v: any) => setSortKey(v)}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="matricule">Matricule</SelectItem>
+                    <SelectItem value="famille">Famille</SelectItem>
+                    <SelectItem value="service">Service</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="derniere_mesure">Dernière mesure</SelectItem>
+                  </SelectContent>
+                </Select>
+
+              <Select value={sortDir} onValueChange={(v: any) => setSortDir(v)}>
+                <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Asc</SelectItem>
+                  <SelectItem value="desc">Desc</SelectItem>
+                </SelectContent>
+              </Select>
+              </div>
+
+              <div className="flex gap-2">
+                <Select value={groupBy} onValueChange={(v: any) => setGroupBy(v)}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sans groupe</SelectItem>
+                    <SelectItem value="famille">Grouper par Famille</SelectItem>
+                    <SelectItem value="service">Grouper par Service</SelectItem>
+                    <SelectItem value="clinique">Grouper par Clinique</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={String(pageSize)} onValueChange={(v: any) => { setPageSize(Number(v)); setPageIndex(0); }}>
+                  <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>      <Card>
         <CardHeader>
           <CardTitle>Liste des Capteurs</CardTitle>
         </CardHeader>
@@ -604,76 +791,175 @@ export function SensorManagementUser() {
             </TableHeader>
 
             <TableBody>
-              {sensors.map(sensor => (
-                <TableRow key={sensor.id} className="hover:bg-muted/5">
-                  <TableCell className="font-medium">{sensor.matricule}</TableCell>
+              {groupBy !== 'none'
+                ? Object.entries(groupedSensors).map(([groupName, groupSensors]) => (
+                    <React.Fragment key={groupName}>
+                      <TableRow className="bg-muted/30">
+                        <TableCell colSpan={8} className="font-semibold text-sm uppercase tracking-wide">
+                          {groupName} ({groupSensors.length})
+                        </TableCell>
+                      </TableRow>
+                      {groupSensors.map(sensor => (
+                        <TableRow key={sensor.id} className="hover:bg-muted/5">
+                          <TableCell className="font-medium">{sensor.matricule}</TableCell>
 
-                  <TableCell className="text-xs font-mono">
-                    {sensor.famille?.famille} <span className="text-muted-foreground">({sensor.famille?.type?.type})</span>
-                  </TableCell>
+                          <TableCell className="text-xs font-mono">
+                            {sensor.famille?.famille} <span className="text-muted-foreground">({sensor.famille?.type?.type})</span>
+                          </TableCell>
 
-                  <TableCell className="text-xs">
-                    <div className="flex flex-col text-xs">
-                      <span className="font-medium">{sensor.service?.nom}</span>
-                      <span className="text-muted-foreground">{sensor.service?.floor?.nom} — {sensor.service?.floor?.clinique?.nom}</span>
-                    </div>
-                  </TableCell>
+                          <TableCell className="text-xs">
+                            <div className="flex flex-col text-xs">
+                              <span className="font-medium">{sensor.service?.nom}</span>
+                              <span className="text-muted-foreground">{sensor.service?.floor?.nom} — {sensor.service?.floor?.clinique?.nom}</span>
+                            </div>
+                          </TableCell>
 
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-gray-800">{sensor.adresse_ip ?? '—'}</span>
-                      <span className="text-xs text-gray-500">{sensor.adresse_mac ?? '—'}</span>
-                    </div>
-                  </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-gray-800">{sensor.adresse_ip ?? '—'}</span>
+                              <span className="text-xs text-gray-500">{sensor.adresse_mac ?? '—'}</span>
+                            </div>
+                          </TableCell>
 
-                  <TableCell className="text-xs">
-                    <div>
-                      <div className="text-orange-600">Min: {sensor.seuil_min ?? '—'}</div>
-                      <div className="text-red-600">Max: {sensor.seuil_max ?? '—'}</div>
-                    </div>
-                  </TableCell>
+                          <TableCell className="text-xs">
+                            <div>
+                              <div className="text-orange-600">Min: {sensor.seuil_min ?? '—'}</div>
+                              <div className="text-red-600">Max: {sensor.seuil_max ?? '—'}</div>
+                            </div>
+                          </TableCell>
 
-                  <TableCell className="text-xs">
-                    <div className="flex items-center space-x-2">{getStatusIcon(sensor)}</div>
-                  </TableCell>
+                          <TableCell className="text-xs">
+                            <div className="flex items-center space-x-2">{getStatusIcon(sensor)}</div>
+                          </TableCell>
 
-                  <TableCell className="text-xs">
-                    {sensor.derniere_mesure ? (
-                      <div className="flex flex-col">
-                        <span className="font-medium">{sensor.derniere_mesure.valeur}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {timeAgo(sensor.derniere_mesure.date_mesure)}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </TableCell>
+                          <TableCell className="text-xs">
+                            {sensor.derniere_mesure ? (
+                              <div className="flex flex-col">
+                                <span className="font-medium">
+                                  {sensor.derniere_mesure.valeur}
+                                  <UnitDisplay value={sensor.unite} className="ml-1" />
+                                </span>
+                                <span className="text-muted-foreground text-xs">
+                                  {timeAgo(sensor.derniere_mesure.date_mesure)}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
 
-                  <TableCell className="flex space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => handleEdit(sensor)} disabled={isLoading || isSaving}>
-                      <Edit className="w-3 h-3" />
-                    </Button>
+                          <TableCell className="flex space-x-2">
+                            <Button size="sm" variant="outline" onClick={() => handleEdit(sensor)} disabled={isLoading || isSaving}>
+                              <Edit className="w-3 h-3" />
+                            </Button>
 
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-3 h-3" /></Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Supprimer le capteur</AlertDialogTitle>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Annuler</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDeleteSensor(sensor.id)}>Supprimer</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-3 h-3" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Supprimer le capteur</AlertDialogTitle>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteSensor(sensor.id)}>Supprimer</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  ))
+                : sensorsPage.map(sensor => (
+                    <TableRow key={sensor.id} className="hover:bg-muted/5">
+                      <TableCell className="font-medium">{sensor.matricule}</TableCell>
+
+                      <TableCell className="text-xs font-mono">
+                        {sensor.famille?.famille} <span className="text-muted-foreground">({sensor.famille?.type?.type})</span>
+                      </TableCell>
+
+                      <TableCell className="text-xs">
+                        <div className="flex flex-col text-xs">
+                          <span className="font-medium">{sensor.service?.nom}</span>
+                          <span className="text-muted-foreground">{sensor.service?.floor?.nom} — {sensor.service?.floor?.clinique?.nom}</span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-gray-800">{sensor.adresse_ip ?? '—'}</span>
+                          <span className="text-xs text-gray-500">{sensor.adresse_mac ?? '—'}</span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-xs">
+                        <div>
+                          <div className="text-orange-600">Min: {sensor.seuil_min ?? '—'}</div>
+                          <div className="text-red-600">Max: {sensor.seuil_max ?? '—'}</div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-xs">
+                        <div className="flex items-center space-x-2">{getStatusIcon(sensor)}</div>
+                      </TableCell>
+
+                      <TableCell className="text-xs">
+                        {sensor.derniere_mesure ? (
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {sensor.derniere_mesure.valeur}
+                              <UnitDisplay value={sensor.unite} className="ml-1" />
+                            </span>
+                            <span className="text-muted-foreground text-xs">
+                              {timeAgo(sensor.derniere_mesure.date_mesure)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="flex space-x-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(sensor)} disabled={isLoading || isSaving}>
+                          <Edit className="w-3 h-3" />
+                        </Button>
+
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" disabled={isLoading || isSaving}><Trash2 className="w-3 h-3" /></Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Supprimer le capteur</AlertDialogTitle>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Annuler</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDeleteSensor(sensor.id)}>Supprimer</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              }
             </TableBody>
           </Table>
+
+          {groupBy === 'none' && (
+            <ModernPagination
+              currentPage={pageIndex + 1}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredSensors.length}
+              onPageChange={(page) => setPageIndex(page - 1)}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[10, 20, 30, 50, 100]}
+              itemLabel="capteurs"
+              showPageSizeSelector={true}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

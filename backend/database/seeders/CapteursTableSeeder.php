@@ -53,6 +53,13 @@ class CapteursTableSeeder extends Seeder
                     'CO2'         => rand(600, 800),
                     default       => rand(60, 100)
                 },
+                'unite' => match($familleName) {
+                    'Température' => 'celsius',
+                    'Humidité'    => 'percent',
+                    'Tension'     => 'volt',
+                    'CO2'         => 'ppm',
+                    default       => $faker->randomElement(['celsius', 'percent', 'bar', 'lux', 'watt'])
+                },
                 'adresse_ip'  => $faker->ipv4,
                 'adresse_mac' => $faker->macAddress, // ✅ ajout
                 'created_at'  => now(),

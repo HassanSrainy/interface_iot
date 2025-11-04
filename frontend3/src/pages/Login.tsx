@@ -1,7 +1,9 @@
 // src/pages/LoginPage.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { login as apiLogin } from "../hooks/api-user"; // ton service API
+import { useAuth } from "../context/AuthProvider";
+import type { LoginResponse as ApiLoginResponse } from "../hooks/api-user";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -10,20 +12,8 @@ import { Alert, AlertDescription } from "../components/ui/alert";
 import { Wifi, AlertCircle } from "lucide-react";
 
 // Interface pour TypeScript (role optionnel car différentes APIs renvoient des formats différents)
-interface LoginResponse {
-  message: string;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    // role peut être string, ou roles array, ou is_admin bool, etc.
-    role?: string;
-    roles?: string[] | { name?: string }[];
-    is_admin?: boolean;
-    [k: string]: any;
-  };
-  token: string;
-}
+// Use the API response type (does not require a token for session-based auth)
+type LoginResponse = ApiLoginResponse;
 
 export function LoginPage() {
   const [email, setEmail] = useState("");
@@ -31,6 +21,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const useAuthHook = useAuth();
+  const location = useLocation();
 
   // helper pour extraire un role lisible depuis la réponse
   const extractRole = (u: any): string | undefined => {
@@ -53,26 +45,24 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const res: LoginResponse = await apiLogin({ email, password });
+      // Use useAuth.login so the global auth state is updated
+      const { login } = useAuthHook;
+      const res = await login({ email, password });
 
-      // déterminer role de façon robuste
-      const role = extractRole(res.user);
+      // Prefer the canonical user object from the auth provider (it should be set by login)
+      const canonicalUser = useAuthHook.user ?? res?.user;
+      const role = extractRole(canonicalUser);
 
-      // pour être sûr que localStorage contient toujours un champ role, on enrichit user si besoin
-      const userToStore = { ...res.user, role };
+      console.log("Utilisateur connecté via hook:", res.user);
 
-      // Stockage
-      localStorage.setItem("user", JSON.stringify(userToStore));
-      localStorage.setItem("token", res.token);
-
-      console.log("Utilisateur connecté :", userToStore);
-
-      // Redirection selon le role
-      if (role === "admin") {
-        navigate("/"); // dashboard admin
+      // If redirected here by ProtectedRoute, navigate back to the original location
+      const from = (location.state as any)?.from?.pathname;
+      if (from) {
+        navigate(from, { replace: true });
+      } else if (role === "admin") {
+        navigate("/");
       } else {
-        // si role absent ou différent d'admin -> page utilisateur
-        navigate("/user");
+        navigate("/user/dashboard");
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "Erreur lors de la connexion");

@@ -1,6 +1,6 @@
 // src/components/alertes/alertes-management-user.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import useAuth from "../../hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "../ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { ModernPagination } from "../ui/modern-pagination";
 import {
   Search,
   Filter,
@@ -54,10 +55,9 @@ const isHigh = (t?: string) => {
 const isLow = (t?: string) => {
   const tl = (t ?? "").toLowerCase();
   return (
-    tl.includes("low") ||
+    tl.includes("lower") ||
     tl.includes("bas") ||
-    tl.includes("min") ||
-    tl.includes("lower")
+    tl.includes("min")
   );
 };
 
@@ -74,6 +74,13 @@ export function AlertesManagementUser(): React.ReactElement {
     "all"
   );
   const [filterType, setFilterType] = useState<"all" | string>("all");
+
+  // Pagination, sort, group-by
+  const [sortKey, setSortKey] = useState<"id" | "type" | "date" | "statut">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [pageSize, setPageSize] = useState(10);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [groupBy, setGroupBy] = useState<"none" | "type" | "statut">("none");
 
   useEffect(() => {
     let mounted = true;
@@ -202,6 +209,45 @@ export function AlertesManagementUser(): React.ReactElement {
       return matchesSearch && matchesStatus && matchesType;
     });
   }, [alertes, searchTerm, filterStatus, filterType]);
+
+  // Sort
+  const sortedAlertes = useMemo(() => {
+    const arr = [...filteredAlertes];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "id") {
+        cmp = a.id - b.id;
+      } else if (sortKey === "type") {
+        cmp = (a.type ?? "").localeCompare(b.type ?? "");
+      } else if (sortKey === "date") {
+        cmp = new Date(a.date).getTime() - new Date(b.date).getTime();
+      } else if (sortKey === "statut") {
+        cmp = (a.statut ?? "").localeCompare(b.statut ?? "");
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [filteredAlertes, sortKey, sortDir]);
+
+  // Group By
+  const groupedAlertes = useMemo(() => {
+    if (groupBy === "none") return {};
+    const groups: Record<string, Alerte[]> = {};
+    sortedAlertes.forEach((a) => {
+      const key = groupBy === "type" ? (a.type || "—") : (a.statut || "—");
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(a);
+    });
+    return groups;
+  }, [sortedAlertes, groupBy]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedAlertes.length / pageSize));
+  const alertesPage = useMemo(() => {
+    if (groupBy !== "none") return sortedAlertes;
+    const start = pageIndex * pageSize;
+    return sortedAlertes.slice(start, start + pageSize);
+  }, [sortedAlertes, pageIndex, pageSize, groupBy]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -435,6 +481,55 @@ export function AlertesManagementUser(): React.ReactElement {
               ))}
             </SelectContent>
           </Select>
+
+          {/* Sort Key */}
+          <Select value={sortKey} onValueChange={(v: any) => setSortKey(v)}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="Trier par" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="id">ID</SelectItem>
+              <SelectItem value="type">Type</SelectItem>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="statut">Statut</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Sort Direction */}
+          <Select value={sortDir} onValueChange={(v: any) => setSortDir(v)}>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="asc">Asc</SelectItem>
+              <SelectItem value="desc">Desc</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Group By */}
+          <Select value={groupBy} onValueChange={(v: any) => setGroupBy(v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Grouper par" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sans groupe</SelectItem>
+              <SelectItem value="type">Par Type</SelectItem>
+              <SelectItem value="statut">Par Statut</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Page Size */}
+          <Select value={String(pageSize)} onValueChange={(v: any) => { setPageSize(Number(v)); setPageIndex(0); }}>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="5">5</SelectItem>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -455,15 +550,54 @@ export function AlertesManagementUser(): React.ReactElement {
 
             <div>
               <TabsContent value="all">
-                <AlertesTable alertes={filteredAlertes} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
+                <AlertesTable
+                  sortedAlertes={sortedAlertes}
+                  groupBy={groupBy}
+                  groupedAlertes={groupedAlertes}
+                  alertesPage={alertesPage}
+                  totalPages={totalPages}
+                  pageIndex={pageIndex}
+                  setPageIndex={setPageIndex}
+                  pageSize={pageSize}
+                  setPageSize={setPageSize}
+                  formatDate={formatDate}
+                  statutDisplay={statutDisplay}
+                  typeDisplay={typeDisplay}
+                />
               </TabsContent>
 
               <TabsContent value="actif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isActiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
+                <AlertesTable
+                  sortedAlertes={sortedAlertes.filter(a => isActiveStatus(a.statut))}
+                  groupBy="none"
+                  groupedAlertes={{}}
+                  alertesPage={sortedAlertes.filter(a => isActiveStatus(a.statut)).slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)}
+                  totalPages={Math.max(1, Math.ceil(sortedAlertes.filter(a => isActiveStatus(a.statut)).length / pageSize))}
+                  pageIndex={pageIndex}
+                  setPageIndex={setPageIndex}
+                  pageSize={pageSize}
+                  setPageSize={setPageSize}
+                  formatDate={formatDate}
+                  statutDisplay={statutDisplay}
+                  typeDisplay={typeDisplay}
+                />
               </TabsContent>
 
               <TabsContent value="inactif">
-                <AlertesTable alertes={filteredAlertes.filter(a => isInactiveStatus(a.statut))} formatDate={formatDate} statutDisplay={statutDisplay} typeDisplay={typeDisplay} />
+                <AlertesTable
+                  sortedAlertes={sortedAlertes.filter(a => isInactiveStatus(a.statut))}
+                  groupBy="none"
+                  groupedAlertes={{}}
+                  alertesPage={sortedAlertes.filter(a => isInactiveStatus(a.statut)).slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)}
+                  totalPages={Math.max(1, Math.ceil(sortedAlertes.filter(a => isInactiveStatus(a.statut)).length / pageSize))}
+                  pageIndex={pageIndex}
+                  setPageIndex={setPageIndex}
+                  pageSize={pageSize}
+                  setPageSize={setPageSize}
+                  formatDate={formatDate}
+                  statutDisplay={statutDisplay}
+                  typeDisplay={typeDisplay}
+                />
               </TabsContent>
             </div>
           </CardContent>
@@ -475,12 +609,20 @@ export function AlertesManagementUser(): React.ReactElement {
 
 /* ---------- Table component ---------- */
 function AlertesTable(props: {
-  alertes: Alerte[];
+  sortedAlertes: Alerte[];
+  groupBy: "none" | "type" | "statut";
+  groupedAlertes: Record<string, Alerte[]>;
+  alertesPage: Alerte[];
+  totalPages: number;
+  pageIndex: number;
+  setPageIndex: React.Dispatch<React.SetStateAction<number>>;
+  pageSize: number;
+  setPageSize: React.Dispatch<React.SetStateAction<number>>;
   formatDate: (s: string) => string;
   statutDisplay: (s: RawStatut) => any;
   typeDisplay: (t?: string) => any;
 }) {
-  const { alertes, formatDate, statutDisplay, typeDisplay } = props;
+  const { sortedAlertes, groupBy, groupedAlertes, alertesPage, totalPages, pageIndex, setPageIndex, pageSize, setPageSize, formatDate, statutDisplay, typeDisplay } = props;
 
   return (
     <Card>
@@ -497,7 +639,7 @@ function AlertesTable(props: {
           </TableHeader>
 
           <TableBody>
-            {alertes.length === 0 && (
+            {sortedAlertes.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
                   Aucune alerte trouvée.
@@ -505,21 +647,59 @@ function AlertesTable(props: {
               </TableRow>
             )}
 
-            {alertes.map((a) => (
-              <TableRow key={a.id}>
-                <TableCell className="font-medium">
-                  {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
-                </TableCell>
-                <TableCell>{typeDisplay(a.type)}</TableCell>
-                <TableCell>{a.valeur ?? "—"}</TableCell>
-                <TableCell>{statutDisplay(a.statut)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatDate(a.date)}
-                </TableCell>
-              </TableRow>
-            ))}
+            {groupBy !== "none"
+              ? Object.entries(groupedAlertes).map(([groupName, groupAlertes]) => (
+                  <React.Fragment key={groupName}>
+                    <TableRow className="bg-muted/30">
+                      <TableCell colSpan={5} className="font-semibold text-sm uppercase tracking-wide">
+                        {groupName} ({groupAlertes.length})
+                      </TableCell>
+                    </TableRow>
+                    {groupAlertes.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell className="font-medium">
+                          {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
+                        </TableCell>
+                        <TableCell>{typeDisplay(a.type)}</TableCell>
+                        <TableCell>{a.valeur ?? "—"}</TableCell>
+                        <TableCell>{statutDisplay(a.statut)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatDate(a.date)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </React.Fragment>
+                ))
+              : alertesPage.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell className="font-medium">
+                      {a.capteur?.matricule ?? "#" + (a.capteur_id ?? "N/A")}
+                    </TableCell>
+                    <TableCell>{typeDisplay(a.type)}</TableCell>
+                    <TableCell>{a.valeur ?? "—"}</TableCell>
+                    <TableCell>{statutDisplay(a.statut)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(a.date)}
+                    </TableCell>
+                  </TableRow>
+                ))
+            }
           </TableBody>
         </Table>
+
+        {groupBy === "none" && (
+          <ModernPagination
+            currentPage={pageIndex + 1}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={sortedAlertes.length}
+            onPageChange={(page) => setPageIndex(page - 1)}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[10, 20, 30, 50, 100]}
+            itemLabel="alertes"
+            showPageSizeSelector={true}
+          />
+        )}
       </CardContent>
     </Card>
   );

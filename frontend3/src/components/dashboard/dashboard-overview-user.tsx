@@ -6,6 +6,7 @@ import AlertsPanelUser from "./alerts-panel-user";
 import ClinicOverview from "./clinic-overview";
 import { getSensorsByUser, getSensorsAlertCountsByUser, getSensorMesuresByUser } from "../sensors/sensor-api";
 import { getAlertesByUser } from "../alertes/alertes-api";
+import { ChartTimeFilter } from "../charts/ChartTimeFilter";
 import {
   ResponsiveContainer,
   LineChart,
@@ -288,9 +289,10 @@ export function DashboardOverviewUser({
   // ========================================
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Vue d'ensemble utilisateur</h2>
-        <p className="text-muted-foreground">Vos capteurs et données en temps réel</p>
+      {/* Header */}
+      <div className="pb-4 border-b border-slate-200">
+        <h1 className="text-3xl font-bold text-slate-900">Tableau de Bord</h1>
+        <p className="text-slate-600 mt-1">Vos capteurs et données en temps réel</p>
       </div>
 
       <Tabs defaultValue="evolution" className="space-y-4">
@@ -320,7 +322,7 @@ export function DashboardOverviewUser({
                     Retour aux capteurs
                   </button>
 
-                  <div className="flex items-center space-x-3 bg-gray-50 p-2 rounded-lg">
+                  <div className="flex items-center space-x-2 bg-gray-100 p-1.5 rounded-lg border border-gray-200">
                     {PERIODS.map(({ key, label }) => {
                       const active = chartPeriod === key;
                       return (
@@ -329,11 +331,18 @@ export function DashboardOverviewUser({
                           type="button"
                           onClick={() => setChartPeriod(key)}
                           aria-pressed={active}
+                          style={active ? {
+                            backgroundColor: '#1f2937',
+                            color: '#ffffff',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
+                          } : {
+                            backgroundColor: '#ffffff',
+                            color: '#4b5563',
+                            border: '1px solid #e5e7eb'
+                          }}
                           className={
                             `px-4 py-2 rounded-md font-medium text-sm transition-all select-none ` +
-                            (active
-                              ? "bg-black text-white shadow-md"
-                              : "bg-white text-gray-700 hover:bg-gray-100")
+                            (active ? "" : "hover:bg-gray-50")
                           }
                         >
                           {label}
@@ -344,24 +353,29 @@ export function DashboardOverviewUser({
                 </div>
 
                 {chartPeriod === "custom" && (
-                  <div className="flex items-center space-x-4 mt-4 pt-4 border-t">
-                    <div className="flex items-center space-x-2">
-                      <label className="text-sm font-medium text-gray-700">Du:</label>
-                      <input
-                        type="date"
-                        value={dateFrom ?? ""}
-                        onChange={(e) => setDateFrom(e.target.value ?? null)}
-                        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <label className="text-sm font-medium text-gray-700">Au:</label>
-                      <input
-                        type="date"
-                        value={dateTo ?? ""}
-                        onChange={(e) => setDateTo(e.target.value ?? null)}
-                        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Période personnalisée</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">Date de début</label>
+                          <input
+                            type="date"
+                            value={dateFrom ?? ""}
+                            onChange={(e) => setDateFrom(e.target.value ?? null)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">Date de fin</label>
+                          <input
+                            type="date"
+                            value={dateTo ?? ""}
+                            onChange={(e) => setDateTo(e.target.value ?? null)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

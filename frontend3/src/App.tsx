@@ -6,7 +6,7 @@ import { CliniqueManagement } from "./components/cliniques/clinique-management";
 import { AlertesManagement } from "./components/alertes/alertes-management";
 import { UserManagement } from "./components/utilisateurs/utilisateur-management";
 import { DashboardOverview } from './components/dashboard/dashboard-overview';
-import useAuth from "./hooks/useAuth";
+import { useAuth } from "./context/AuthProvider";
 import { useNavigate } from "react-router-dom";
 
 export default function App() {
@@ -23,7 +23,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50/50">
       <Navbar 
-        user={user || { email: "..." }} 
+        user={user} 
         onLogout={logout}  
       />
 

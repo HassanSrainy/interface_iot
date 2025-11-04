@@ -13,15 +13,17 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie' ,'login', 'logout', 'user'],
+    'paths' => ['*'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000'], // ton front React
+    'allowed_origins' => ['http://localhost:3000', 'http://localhost:5173'],
 
     'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
+
+    'exposed_headers' => ['*'],
 
     'exposed_headers' => [],
 

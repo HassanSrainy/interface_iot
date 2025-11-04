@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import useAuth from "../hooks/useAuth";
+import { useAuth } from "../context/AuthProvider";
 import UserNavbar from "../components/layout/UserNavbar";
 import { DashboardOverviewUser } from "../components/dashboard/dashboard-overview-user";
 import { SensorManagementUser } from "../components/sensors/sensor-management-user";
-import { CliniqueManagementUser } from "../components/cliniques/clinique-management-user";
+import CliniqueManagementUser from "../components/cliniques/clinique-management-user";
 import { AlertesManagementUser } from "../components/alertes/alertes-management-user";
 import { getUserNavbarStats } from "../components/utilisateurs/utilisateurs-api"; // ✅ Import de la nouvelle fonction
 

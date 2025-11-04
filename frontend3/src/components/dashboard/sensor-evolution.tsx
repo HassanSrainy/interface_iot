@@ -7,6 +7,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { CalendarIcon, ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { UnitDisplay } from '../sensors/UnitDisplay'
+import { getUnitByValue } from '../../data/units'
 // Format date function - remplace date-fns pour éviter les dépendances
 const formatDate = (date: Date, formatStr: string) => {
   const options: Intl.DateTimeFormatOptions = {}
@@ -83,12 +85,29 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
   const [customDate, setCustomDate] = useState<Date>()
   const [showCustomCalendar, setShowCustomCalendar] = useState(false)
 
+  // Filters & pagination for the evolution chart/data
+  const [minValueFilter, setMinValueFilter] = useState<number | null>(null)
+  const [maxValueFilter, setMaxValueFilter] = useState<number | null>(null)
+  const [alertOnly, setAlertOnly] = useState(false)
+  const [pageSize, setPageSize] = useState<number>(50)
+  const [page, setPage] = useState<number>(0)
+
   const isCustomPeriod = selectedPeriod === 'custom'
   const days = isCustomPeriod && customDate
     ? Math.ceil((new Date().getTime() - customDate.getTime()) / (1000 * 60 * 60 * 24))
     : parseInt(selectedPeriod)
 
   const historicalData = generateHistoricalData(capteur, days)
+  // apply filters
+  const filteredData = historicalData.filter(d => {
+    if (alertOnly && !d.isAlert) return false
+    if (minValueFilter != null && d.value < minValueFilter) return false
+    if (maxValueFilter != null && d.value > maxValueFilter) return false
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize))
+  const paginatedData = filteredData.slice(page * pageSize, page * pageSize + pageSize)
   const capteurAlertes = alertes.filter(a => a.capteur_id === capteur.id)
   const alertesActives = capteurAlertes.filter(a => a.statut === 'active')
 
@@ -193,9 +212,11 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
             {getTrendIcon()}
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{currentValue}{capteur.unit}</div>
+            <div className="text-2xl font-bold">
+              {currentValue}<UnitDisplay value={capteur.unite} className="ml-1" />
+            </div>
             <p className={`text-xs ${getTrendColor()}`}>
-              {trend === 'up' ? '+' : trend === 'down' ? '' : '±'}{Math.abs(currentValue - previousValue).toFixed(1)}{capteur.unit}
+              {trend === 'up' ? '+' : trend === 'down' ? '' : '±'}{Math.abs(currentValue - previousValue).toFixed(1)}<UnitDisplay value={capteur.unite} className="ml-0.5" />
             </p>
           </CardContent>
         </Card>
@@ -205,7 +226,9 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
             <CardTitle className="text-sm font-medium">Moyenne</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{avgValue.toFixed(1)}{capteur.unit}</div>
+            <div className="text-2xl font-bold">
+              {avgValue.toFixed(1)}<UnitDisplay value={capteur.unite} className="ml-1" />
+            </div>
             <p className="text-xs text-muted-foreground">
               Sur la période sélectionnée
             </p>
@@ -217,9 +240,11 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
             <CardTitle className="text-sm font-medium">Min / Max</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{minValue.toFixed(1)} / {maxValue.toFixed(1)}</div>
+            <div className="text-2xl font-bold">
+              {minValue.toFixed(1)} / {maxValue.toFixed(1)}
+            </div>
             <p className="text-xs text-muted-foreground">
-              {capteur.unit}
+              <UnitDisplay value={capteur.unite} />
             </p>
           </CardContent>
         </Card>
@@ -247,9 +272,9 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={historicalData}>
+          <div className="h-[500px]">
+                <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={paginatedData} margin={{ left: 20, right: 20, top: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="time" 
@@ -259,30 +284,69 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                 <YAxis 
                   fontSize={12}
                   tick={{ fontSize: 12 }}
-                  domain={['dataMin - 2', 'dataMax + 2']}
+                  domain={[
+                    (dataMin: number) => {
+                      const min = capteur.seuil_min != null ? Math.min(dataMin, capteur.seuil_min) : dataMin;
+                      return Math.floor(min - Math.abs(min * 0.1));
+                    },
+                    (dataMax: number) => {
+                      const max = capteur.seuil_max != null ? Math.max(dataMax, capteur.seuil_max) : dataMax;
+                      return Math.ceil(max + Math.abs(max * 0.1));
+                    }
+                  ]}
+                  label={{ 
+                    value: getUnitByValue(capteur.unite)?.symbol || capteur.unite || 'Valeur', 
+                    angle: -90, 
+                    position: 'insideLeft',
+                    style: { textAnchor: 'middle', fontSize: 14, fontWeight: 600 }
+                  }}
                 />
                 <Tooltip 
                   labelFormatter={(value, payload) => {
                     const data = payload?.[0]?.payload
                     return data?.fullDate ? formatDate(new Date(data.fullDate), 'dd/MM/yyyy HH:mm') : value
                   }}
-                  formatter={(value: number) => [`${value}${capteur.unit}`, 'Valeur']}
+                  formatter={(value: number) => {
+                    const unit = getUnitByValue(capteur.unite);
+                    const unitSymbol = unit ? unit.symbol : (capteur.unite || '');
+                    return [`${value}${unitSymbol}`, 'Valeur'];
+                  }}
                 />
                 <Legend />
                 
-                {/* Seuils */}
-                <ReferenceLine 
-                  y={capteur.seuil_min} 
-                  stroke="orange" 
-                  strokeDasharray="5 5" 
-                  label={{ value: `Seuil min: ${capteur.seuil_min}${capteur.unit}`, position: 'topLeft' }}
-                />
-                <ReferenceLine 
-                  y={capteur.seuil_max} 
-                  stroke="red" 
-                  strokeDasharray="5 5" 
-                  label={{ value: `Seuil max: ${capteur.seuil_max}${capteur.unit}`, position: 'topLeft' }}
-                />
+                {/* Seuils - Always visible */}
+                {capteur.seuil_min != null && (
+                  <ReferenceLine 
+                    y={capteur.seuil_min} 
+                    stroke="orange" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    ifOverflow="extendDomain"
+                    label={{ 
+                      value: `Seuil min: ${capteur.seuil_min}${getUnitByValue(capteur.unite)?.symbol || capteur.unite || ''}`, 
+                      position: 'insideTopLeft',
+                      fill: 'orange',
+                      fontSize: 12,
+                      fontWeight: 600
+                    }}
+                  />
+                )}
+                {capteur.seuil_max != null && (
+                  <ReferenceLine 
+                    y={capteur.seuil_max} 
+                    stroke="red" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    ifOverflow="extendDomain"
+                    label={{ 
+                      value: `Seuil max: ${capteur.seuil_max}${getUnitByValue(capteur.unite)?.symbol || capteur.unite || ''}`, 
+                      position: 'insideTopLeft',
+                      fill: 'red',
+                      fontSize: 12,
+                      fontWeight: 600
+                    }}
+                  />
+                )}
                 
                 {/* Ligne des valeurs */}
                 <Line 
@@ -305,6 +369,35 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
         </CardContent>
       </Card>
 
+      {/* Filters and pagination controls */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Valeur min</label>
+          <input type="number" value={minValueFilter ?? ''} onChange={(e) => { setMinValueFilter(e.target.value === '' ? null : Number(e.target.value)); setPage(0); }} className="input input-sm w-28" />
+          <label className="text-sm">Valeur max</label>
+          <input type="number" value={maxValueFilter ?? ''} onChange={(e) => { setMaxValueFilter(e.target.value === '' ? null : Number(e.target.value)); setPage(0); }} className="input input-sm w-28" />
+          <label className="flex items-center gap-2 ml-2">
+            <input type="checkbox" checked={alertOnly} onChange={(e) => { setAlertOnly(e.target.checked); setPage(0); }} />
+            <span className="text-sm">Afficher seulement alertes</span>
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Page size</label>
+          <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }} className="input input-sm">
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>Précédent</Button>
+            <div className="text-sm">{page + 1} / {totalPages}</div>
+            <Button size="sm" variant="outline" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Suivant</Button>
+          </div>
+        </div>
+      </div>
+
       {/* Informations sur les seuils */}
       <Card>
         <CardHeader>
@@ -318,7 +411,7 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                 <span className="text-sm font-medium">Zone normale</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Entre {capteur.seuil_min}{capteur.unit} et {capteur.seuil_max}{capteur.unit}
+                Entre {capteur.seuil_min}<UnitDisplay value={capteur.unite} className="ml-0.5" /> et {capteur.seuil_max}<UnitDisplay value={capteur.unite} className="ml-0.5" />
               </p>
             </div>
             <div className="space-y-2">
@@ -327,7 +420,7 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                 <span className="text-sm font-medium">Seuil minimum</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                En dessous de {capteur.seuil_min}{capteur.unit}
+                En dessous de {capteur.seuil_min}<UnitDisplay value={capteur.unite} className="ml-0.5" />
               </p>
             </div>
             <div className="space-y-2">
@@ -336,7 +429,7 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                 <span className="text-sm font-medium">Seuil maximum</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Au dessus de {capteur.seuil_max}{capteur.unit}
+                Au dessus de {capteur.seuil_max}<UnitDisplay value={capteur.unite} className="ml-0.5" />
               </p>
             </div>
           </div>
@@ -359,9 +452,11 @@ export function SensorEvolution({ capteur, alertes, onClose }: SensorEvolutionPr
                   <div className="flex items-center space-x-3">
                     <AlertTriangle className="h-4 w-4 text-red-500" />
                     <div>
-                      <p className="text-sm font-medium">{alerte.message}</p>
+                      <p className="text-sm font-medium">
+                        {alerte.type} — {alerte.valeur}<UnitDisplay value={capteur.unite} className="ml-0.5" />
+                      </p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(new Date(alerte.date_creation), 'dd/MM/yyyy HH:mm')}
+                        {formatDate(new Date(alerte.date ?? alerte.created_at), 'dd/MM/yyyy HH:mm')}
                       </p>
                     </div>
                   </div>

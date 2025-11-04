@@ -1,10 +1,13 @@
 // src/components/dashboard/alerts-panel.tsx
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw, AlertOctagon } from "lucide-react";
 import { Button } from "../ui/button";
-import { getAlertes, Alerte } from "../alertes/alertes-api"; // <-- utiliser l'API centralisée
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Alerte } from "../alertes/alertes-api";
+import { useAlertes } from "../../queries/alertes";
+import { ChartTimeFilter } from "../charts/ChartTimeFilter";
 
 // --- Helpers & small utils ---
 const isActiveStatus = (s?: string) => String(s ?? "").toLowerCase() === "actif";
@@ -74,36 +77,90 @@ export function AlertsPanel({
   autoRefresh?: boolean;
   refreshInterval?: number;
 }) {
-  const [alertes, setAlertes] = useState<Alerte[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  const fetchAlertes = async () => {
-    try {
-      setLoading(true);
-      const data = await getAlertes();
-      setAlertes(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Erreur chargement alertes:", err);
-      setAlertes([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAlertes();
-    if (!autoRefresh) return;
-    const t = setInterval(fetchAlertes, refreshInterval);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const alertesQuery = useAlertes();
+  const alertes = alertesQuery.data || [];
+  const loading = alertesQuery.isLoading;
+  
+  const [activePeriod, setActivePeriod] = useState<string>('all');
+  const [resolvedPeriod, setResolvedPeriod] = useState<string>('today');
+  const [showResolved, setShowResolved] = useState(false);
 
   // filtrages
-  const actives = alertes.filter((a) => isActiveStatus(a.statut));
+  const allActives = alertes.filter((a) => isActiveStatus(a.statut));
   const resolved = alertes.filter((a) => isResolvedStatus(a.statut));
+  
+  // Filtrer les alertes actives par période
+  const getFilteredActiveAlerts = () => {
+    const now = new Date();
+    const filtered = allActives.filter((alerte) => {
+      if (!alerte.date) return false;
+      
+      // Parse date string to Date object
+      const alertDate = new Date(alerte.date);
+      
+      // Debug logging
+      if (allActives.length > 0 && allActives.indexOf(alerte) === 0) {
+        console.log('[AlertsPanel] Filter debug:', {
+          activePeriod,
+          totalActives: allActives.length,
+          firstDate: alerte.date,
+          parsedDate: alertDate,
+          now,
+          isToday: alertDate.toDateString() === now.toDateString()
+        });
+      }
+      
+      switch (activePeriod) {
+        case 'today':
+          return alertDate.toDateString() === now.toDateString();
+        case '7days':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return alertDate >= sevenDaysAgo;
+        case '30days':
+          const thirtyDaysAgo = new Date(now);
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          return alertDate >= thirtyDaysAgo;
+        case 'all':
+        default:
+          return true;
+      }
+    });
+    
+    console.log('[AlertsPanel] Filtered actives:', {
+      period: activePeriod,
+      total: allActives.length,
+      filtered: filtered.length
+    });
+    
+    return filtered;
+  };
+  
+  // Filtrer les alertes résolues par période
+  const getFilteredResolvedAlerts = () => {
+    const now = new Date();
+    return resolved.filter((alerte) => {
+      if (!alerte.date_resolution) return false;
+      const resolutionDate = new Date(alerte.date_resolution);
+      
+      switch (resolvedPeriod) {
+        case 'today':
+          return resolutionDate.toDateString() === now.toDateString();
+        case '7days':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return resolutionDate >= sevenDaysAgo;
+        default:
+          return true;
+      }
+    });
+  };
+  
+  const actives = getFilteredActiveAlerts();
+  const filteredResolved = getFilteredResolvedAlerts();
 
   // Si on est en train de charger — afficher uniquement le loader
-  if (loading) {
+  if (loading && alertes.length === 0) {
     return (
       <div className="p-4">
         <Card>
@@ -126,7 +183,7 @@ export function AlertsPanel({
           <Button
             variant="ghost"
             size="sm"
-            onClick={fetchAlertes}
+            onClick={() => alertesQuery.refetch()}
             title="Rafraîchir"
             aria-label="Rafraîchir les alertes"
             disabled={loading}
@@ -146,7 +203,11 @@ export function AlertsPanel({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{actives.length}</div>
-            <p className="text-xs text-muted-foreground">Nécessitent une attention</p>
+            <p className="text-xs text-muted-foreground">
+              {activePeriod === 'today' ? "Aujourd'hui" : 
+               activePeriod === '7days' ? "7 derniers jours" :
+               activePeriod === '30days' ? "30 derniers jours" : "Au total"}
+            </p>
           </CardContent>
         </Card>
 
@@ -156,8 +217,11 @@ export function AlertsPanel({
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{resolved.length}</div>
-            <p className="text-xs text-muted-foreground">Problèmes résolus</p>
+            <div className="text-2xl font-bold text-green-600">{filteredResolved.length}</div>
+            <p className="text-xs text-muted-foreground">
+              {resolvedPeriod === 'today' ? "Aujourd'hui" : 
+               resolvedPeriod === '7days' ? "7 derniers jours" : "Au total"}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -165,29 +229,55 @@ export function AlertsPanel({
       {/* Active alerts list */}
       {actives.length > 0 ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Alertes Actives</CardTitle>
+            <Select value={activePeriod} onValueChange={setActivePeriod}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                <SelectItem value="today">Aujourd'hui</SelectItem>
+                <SelectItem value="7days">7 derniers jours</SelectItem>
+                <SelectItem value="30days">30 derniers jours</SelectItem>
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent className="space-y-4">
             {actives.map((alerte) => {
               const capteur = (alerte.capteur as any) ?? {};
               const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
+              const isCritique = (alerte as any).critique === true || (alerte as any).critique === 1;
 
               // attempt to read nested relations safely (may be undefined)
               const cliniqueNom = (capteur?.service as any)?.floor?.clinique?.nom ?? "";
               const serviceNom = (capteur?.service as any)?.nom ?? "";
 
               return (
-                <div key={alerte.id} className="flex items-center justify-between p-4 border rounded-lg">
+                <div 
+                  key={alerte.id} 
+                  className={`flex items-center justify-between p-4 border rounded-lg ${
+                    isCritique ? 'bg-red-50 border-red-300' : 'bg-white'
+                  }`}
+                >
                   <div className="flex items-center space-x-3">
                     <div className={getAlertColor(alerte.type ?? "", alerte.statut)}>
-                      {getAlertIcon(alerte.type ?? "")}
+                      {isCritique ? (
+                        <AlertOctagon className="h-5 w-5 text-red-600" />
+                      ) : (
+                        getAlertIcon(alerte.type ?? "")
+                      )}
                     </div>
 
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
                         <span className="font-medium">{capteurLabel}</span>
-                        <Badge variant="destructive" className="text-xs">
+                        {isCritique && (
+                          <Badge variant="destructive" className="text-xs animate-pulse">
+                            🔴 CRITIQUE
+                          </Badge>
+                        )}
+                        <Badge variant={isCritique ? "destructive" : "outline"} className="text-xs">
                           {(alerte.type ?? "").replace("_", " ")}
                         </Badge>
                       </div>
@@ -210,41 +300,91 @@ export function AlertsPanel({
         </Card>
       ) : (
         <Card>
-          <CardHeader>
-            <CardTitle>Aucune alerte active</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Alertes Actives</CardTitle>
+            <Select value={activePeriod} onValueChange={setActivePeriod}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                <SelectItem value="today">Aujourd'hui</SelectItem>
+                <SelectItem value="7days">7 derniers jours</SelectItem>
+                <SelectItem value="30days">30 derniers jours</SelectItem>
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-muted-foreground">Aucune alerte nécessitant une action pour le moment.</div>
+            <div className="text-sm text-muted-foreground">
+              {allActives.length === 0 
+                ? "Aucune alerte active pour le moment."
+                : `Aucune alerte active pour ${
+                    activePeriod === 'today' ? "aujourd'hui" : 
+                    activePeriod === '7days' ? "les 7 derniers jours" :
+                    activePeriod === '30days' ? "les 30 derniers jours" : "cette période"
+                  }.`
+              }
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Recently resolved */}
-      {resolved.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Alertes Récemment Résolues</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {resolved.slice(0, 5).map((alerte) => {
-              const capteur = (alerte.capteur as any) ?? {};
-              const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
-              return (
-                <div key={alerte.id} className="flex items-center justify-between p-2 border rounded">
-                  <div className="flex items-center space-x-3">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <div>
-                      <span className="text-sm font-medium">{capteurLabel}</span>
-                      <p className="text-xs text-muted-foreground">{getAlertMessage(alerte)} - Résolu</p>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Alertes Résolues</CardTitle>
+          <div className="flex items-center gap-3">
+            <Select value={resolvedPeriod} onValueChange={setResolvedPeriod}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Aujourd'hui</SelectItem>
+                <SelectItem value="7days">7 derniers jours</SelectItem>
+                <SelectItem value="all">Toutes</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredResolved.length > 0 ? (
+            <div className="space-y-2">
+              {filteredResolved.slice(0, 10).map((alerte) => {
+                const capteur = (alerte.capteur as any) ?? {};
+                const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
+                const dateResolution = (alerte as any).date_resolution 
+                  ? formatDate((alerte as any).date_resolution)
+                  : 'N/A';
+                
+                return (
+                  <div key={alerte.id} className="flex items-center justify-between p-3 border rounded bg-green-50">
+                    <div className="flex items-center space-x-3">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{capteurLabel}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {(alerte.type ?? "").replace("_", " ")}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{getAlertMessage(alerte)}</p>
+                        <p className="text-xs text-green-600">Résolu le: {dateResolution}</p>
+                      </div>
                     </div>
+                    <Badge variant="outline" className="text-xs bg-green-100 text-green-700">
+                      Résolu
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className="text-xs">Résolu</Badge>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground py-4 text-center">
+              Aucune alerte résolue pour cette période
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

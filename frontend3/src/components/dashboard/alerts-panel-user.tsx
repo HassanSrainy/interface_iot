@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, WifiOff, RefreshCw, AlertOctagon } from "lucide-react";
 import { Button } from "../ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { getAlertesByUser, Alerte } from "../alertes/alertes-api";
-import useAuth from "../../hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 
 // --- Helpers ---
 const isActiveStatus = (s?: string) => String(s ?? "").toLowerCase() === "actif";
@@ -76,6 +77,8 @@ export function AlertsPanelUser({
   const { user } = useAuth();
   const [alertes, setAlertes] = useState<Alerte[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activePeriod, setActivePeriod] = useState<string>('all');
+  const [resolvedPeriod, setResolvedPeriod] = useState<string>('today');
 
   const fetchAlertes = async () => {
     if (!user?.id) return;
@@ -98,8 +101,56 @@ export function AlertsPanelUser({
     return () => clearInterval(t);
   }, [user]);
 
-  const actives = alertes.filter((a) => isActiveStatus(a.statut));
+  const allActives = alertes.filter((a) => isActiveStatus(a.statut));
   const resolved = alertes.filter((a) => isResolvedStatus(a.statut));
+  
+  // Filtrer les alertes actives par période
+  const getFilteredActiveAlerts = () => {
+    const now = new Date();
+    return allActives.filter((alerte) => {
+      if (!alerte.date) return false;
+      const alertDate = new Date(alerte.date);
+      
+      switch (activePeriod) {
+        case 'today':
+          return alertDate.toDateString() === now.toDateString();
+        case '7days':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return alertDate >= sevenDaysAgo;
+        case '30days':
+          const thirtyDaysAgo = new Date(now);
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          return alertDate >= thirtyDaysAgo;
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  };
+  
+  // Filtrer les alertes résolues par période
+  const getFilteredResolvedAlerts = () => {
+    const now = new Date();
+    return resolved.filter((alerte) => {
+      if (!alerte.date_resolution) return false;
+      const resolutionDate = new Date(alerte.date_resolution);
+      
+      switch (resolvedPeriod) {
+        case 'today':
+          return resolutionDate.toDateString() === now.toDateString();
+        case '7days':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return resolutionDate >= sevenDaysAgo;
+        default:
+          return true;
+      }
+    });
+  };
+  
+  const actives = getFilteredActiveAlerts();
+  const filteredResolved = getFilteredResolvedAlerts();
 
   if (loading) {
     return (
@@ -142,7 +193,11 @@ export function AlertsPanelUser({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{actives.length}</div>
-            <p className="text-xs text-muted-foreground">Nécessitent une attention</p>
+            <p className="text-xs text-muted-foreground">
+              {activePeriod === 'today' ? "Aujourd'hui" : 
+               activePeriod === '7days' ? "7 derniers jours" :
+               activePeriod === '30days' ? "30 derniers jours" : "Au total"}
+            </p>
           </CardContent>
         </Card>
 
@@ -152,8 +207,11 @@ export function AlertsPanelUser({
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{resolved.length}</div>
-            <p className="text-xs text-muted-foreground">Problèmes résolus</p>
+            <div className="text-2xl font-bold text-green-600">{filteredResolved.length}</div>
+            <p className="text-xs text-muted-foreground">
+              {resolvedPeriod === 'today' ? "Aujourd'hui" : 
+               resolvedPeriod === '7days' ? "7 derniers jours" : "Au total"}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -161,23 +219,50 @@ export function AlertsPanelUser({
       {/* Alertes actives */}
       {actives.length > 0 ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Alertes Actives</CardTitle>
+            <Select value={activePeriod} onValueChange={setActivePeriod}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                <SelectItem value="today">Aujourd'hui</SelectItem>
+                <SelectItem value="7days">7 derniers jours</SelectItem>
+                <SelectItem value="30days">30 derniers jours</SelectItem>
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent className="space-y-4">
             {actives.map((alerte) => {
               const capteur = (alerte.capteur as any) ?? {};
               const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
+              const isCritique = (alerte as any).critique === true || (alerte as any).critique === 1;
+              
               return (
-                <div key={alerte.id} className="flex items-center justify-between p-4 border rounded-lg">
+                <div 
+                  key={alerte.id} 
+                  className={`flex items-center justify-between p-4 border rounded-lg ${
+                    isCritique ? 'bg-red-50 border-red-300' : 'bg-white'
+                  }`}
+                >
                   <div className="flex items-center space-x-3">
                     <div className={getAlertColor(alerte.type ?? "", alerte.statut)}>
-                      {getAlertIcon(alerte.type ?? "")}
+                      {isCritique ? (
+                        <AlertOctagon className="h-5 w-5 text-red-600" />
+                      ) : (
+                        getAlertIcon(alerte.type ?? "")
+                      )}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 mb-1">
                         <span className="font-medium">{capteurLabel}</span>
-                        <Badge variant="destructive" className="text-xs">
+                        {isCritique && (
+                          <Badge variant="destructive" className="text-xs animate-pulse">
+                            🔴 CRITIQUE
+                          </Badge>
+                        )}
+                        <Badge variant={isCritique ? "destructive" : "outline"} className="text-xs">
                           {(alerte.type ?? "").replace("_", " ")}
                         </Badge>
                       </div>
@@ -202,25 +287,45 @@ export function AlertsPanelUser({
       )}
 
       {/* Alertes résolues */}
-      {resolved.length > 0 && (
+      {filteredResolved.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Alertes Résolues</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Alertes Résolues</CardTitle>
+              <Select value={resolvedPeriod} onValueChange={(value: any) => setResolvedPeriod(value)}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Sélectionner période" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Aujourd'hui</SelectItem>
+                  <SelectItem value="7days">7 derniers jours</SelectItem>
+                  <SelectItem value="all">Toutes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {resolved.slice(0, 5).map((alerte) => {
+            {filteredResolved.slice(0, 10).map((alerte) => {
               const capteur = (alerte.capteur as any) ?? {};
               const capteurLabel = capteur.matricule ?? capteur.id ?? `#${alerte.capteur_id ?? alerte.id}`;
               return (
-                <div key={alerte.id} className="flex items-center justify-between p-2 border rounded">
-                  <div className="flex items-center space-x-3">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <div>
-                      <span className="text-sm font-medium">{capteurLabel}</span>
-                      <p className="text-xs text-muted-foreground">{getAlertMessage(alerte)} - Résolu</p>
+                <div key={alerte.id} className="flex items-start space-x-3 p-3 border rounded bg-green-50">
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className="font-medium">{capteurLabel}</span>
+                      <Badge variant="outline" className="text-xs bg-green-100 text-green-800">Résolu</Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {(alerte.type ?? "").replace("_", " ")}
+                      </Badge>
                     </div>
+                    <p className="text-sm text-muted-foreground">{getAlertMessage(alerte)}</p>
+                    {alerte.date_resolution && (
+                      <p className="text-xs text-green-700 mt-1">
+                        Résolu le {formatDate(alerte.date_resolution)}
+                      </p>
+                    )}
                   </div>
-                  <Badge variant="outline" className="text-xs">Résolu</Badge>
                 </div>
               );
             })}

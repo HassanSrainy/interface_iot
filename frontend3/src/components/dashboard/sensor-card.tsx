@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
+import { UnitDisplay } from "../sensors/UnitDisplay";
 import {
   Thermometer,
   Droplets,
@@ -141,16 +142,16 @@ export function SensorCard({
 
       <CardContent>
         <div className="text-2xl font-bold">
-          {value}{unit}
+          {value}<UnitDisplay value={sensor?.unite} className="ml-1" />
         </div>
 
         {seuilMin != null && seuilMax != null && (
           <div className="space-y-2 mt-2">
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{seuilMin}{unit}</span>
+                <span>{seuilMin}<UnitDisplay value={sensor?.unite} /></span>
                 <span>Valeur actuelle</span>
-                <span>{seuilMax}{unit}</span>
+                <span>{seuilMax}<UnitDisplay value={sensor?.unite} /></span>
               </div>
 
               <div className="relative">
